@@ -44,6 +44,18 @@ jobs:
         with:
           credentials_json: ${{ secrets.GBQ_CREDS_JSON }}
 
+      - name: Derive project id from GBQ_CREDS_JSON if missing
+        if: ${{ !env.GCP_PROJECT_ID && secrets.GBQ_CREDS_JSON }}
+        run: |
+          set -euo pipefail
+          echo '${{ secrets.GBQ_CREDS_JSON }}' > /tmp/creds.json
+          DERIVED_PROJECT_ID=$(jq -r '.project_id' /tmp/creds.json)
+          if [[ -z "$DERIVED_PROJECT_ID" || "$DERIVED_PROJECT_ID" == "null" ]]; then
+            echo "Failed to derive project_id from GBQ_CREDS_JSON" >&2
+            exit 1
+          fi
+          echo "GCP_PROJECT_ID=$DERIVED_PROJECT_ID" >> "$GITHUB_ENV"
+
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
