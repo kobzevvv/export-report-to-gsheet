@@ -1,0 +1,86 @@
+name: Deploy Cloud Function
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'cloud_function/**'
+      - 'requirements.txt'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: {}
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ secrets.GCP_REGION }}
+  FUNCTION_NAME: ${{ secrets.FUNCTION_NAME }}
+  # Optional: set to true to allow unauthenticated invoke (recommended only if using token)
+  ALLOW_UNAUTHENTICATED: ${{ secrets.ALLOW_UNAUTHENTICATED }}
+  # Secret Manager secret names to bind at deploy time
+  SECRET_NEON_DATABASE_URL: ${{ secrets.SECRET_NEON_DATABASE_URL }}
+  SECRET_PUBLIC_TRIGGER_TOKEN: ${{ secrets.SECRET_PUBLIC_TRIGGER_TOKEN }}
+  # Fallback: direct env var (GitHub secret)
+  NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'   # for Workload Identity Federation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF)
+        if: ${{ !secrets.GBQ_CREDS_JSON }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Authenticate to Google Cloud (JSON key)
+        if: ${{ secrets.GBQ_CREDS_JSON }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GBQ_CREDS_JSON }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Deploy Cloud Function (Gen2)
+        run: |
+          set -euo pipefail
+          RUNTIME=python311
+          ENTRY_POINT=pg_query_output_to_gsheet
+          REGION=${GCP_REGION:-us-central1}
+          NAME=${FUNCTION_NAME:-pg_query_output_to_gsheet}
+
+          # Build deploy args
+          DEPLOY_ARGS=(
+            --gen2
+            --runtime=${RUNTIME}
+            --region=${REGION}
+            --entry-point=${ENTRY_POINT}
+            --source=cloud_function
+            --trigger-http
+          )
+
+          if [[ "${ALLOW_UNAUTHENTICATED:-false}" == "true" ]]; then
+            DEPLOY_ARGS+=(--allow-unauthenticated)
+          fi
+
+          # Prefer Secret Manager mapping; otherwise fallback to direct env var
+          if [[ -n "${SECRET_NEON_DATABASE_URL:-}" ]]; then
+            DEPLOY_ARGS+=(--set-secrets=NEON_DATABASE_URL=${SECRET_NEON_DATABASE_URL}:latest)
+          elif [[ -n "${NEON_DATABASE_URL:-}" ]]; then
+            DEPLOY_ARGS+=(--set-env-vars=NEON_DATABASE_URL=${NEON_DATABASE_URL})
+          fi
+
+          if [[ -n "${SECRET_PUBLIC_TRIGGER_TOKEN:-}" ]]; then
+            DEPLOY_ARGS+=(--set-secrets=PUBLIC_TRIGGER_TOKEN=${SECRET_PUBLIC_TRIGGER_TOKEN}:latest)
+          fi
+
+          gcloud functions deploy ${NAME} "${DEPLOY_ARGS[@]}"
+        working-directory: .

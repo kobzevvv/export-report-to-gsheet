@@ -1,0 +1,8 @@
+gbq_creds.json
+GBQ_CREDS.JSON
+.env
+.venv/
+__pycache__/
+*.pyc
+.idea/
+.vscode/
