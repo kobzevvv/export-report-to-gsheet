@@ -1,0 +1,6 @@
+functions-framework==3.5.0
+google-api-python-client==2.137.0
+google-auth==2.35.0
+psycopg[binary]==3.2.1
+sqlparse==0.5.1
+tenacity==9.0.0
