@@ -20,6 +20,7 @@ env:
   SECRET_PUBLIC_TRIGGER_TOKEN: ${{ secrets.SECRET_PUBLIC_TRIGGER_TOKEN }}
   # Fallback: direct env var (GitHub secret)
   NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+  GOOGLE_CLOUD_FUNCTION_URL: ${{ secrets.GOOGLE_CLOUD_FUNCTION_URL }}
 
 jobs:
   deploy:
@@ -78,6 +79,7 @@ jobs:
           fi
 
       - name: Deploy Cloud Function (Gen2)
+        id: deploy
         run: |
           set -euo pipefail
           RUNTIME=python311
@@ -109,4 +111,14 @@ jobs:
           fi
 
           gcloud functions deploy ${NAME} "${DEPLOY_ARGS[@]}"
-        working-directory: .
+
+          # Discover URL and expose as output
+          URL=$(gcloud functions describe ${NAME} --region=${REGION} --format="value(serviceConfig.uri)" || true)
+          if [[ -z "${URL}" ]]; then
+            # Fallback to provided secret if set
+            URL=${GOOGLE_CLOUD_FUNCTION_URL:-}
+          fi
+          echo "function_url=${URL}" >> $GITHUB_OUTPUT
+
+      - name: Print function URL
+        run: echo "Function URL: ${{ steps.deploy.outputs.function_url }}"
