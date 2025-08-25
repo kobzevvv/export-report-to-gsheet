@@ -54,6 +54,29 @@ jobs:
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
+      - name: Enable required APIs (idempotent)
+        run: |
+          set -euo pipefail
+          gcloud services enable \
+            cloudfunctions.googleapis.com \
+            run.googleapis.com \
+            artifactregistry.googleapis.com \
+            cloudbuild.googleapis.com \
+            eventarc.googleapis.com \
+            sheets.googleapis.com || true
+
+      - name: Ensure Artifact Registry repo for GCF exists
+        run: |
+          set -euo pipefail
+          REGION=${GCP_REGION:-us-central1}
+          REPO=gcf-artifacts
+          if ! gcloud artifacts repositories describe ${REPO} --location=${REGION} >/dev/null 2>&1; then
+            gcloud artifacts repositories create ${REPO} \
+              --repository-format=docker \
+              --location=${REGION} \
+              --description="GCF build artifacts" || true
+          fi
+
       - name: Deploy Cloud Function (Gen2)
         run: |
           set -euo pipefail
