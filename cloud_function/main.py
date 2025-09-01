@@ -98,9 +98,9 @@ def _update_cell(sheets_api, spreadsheet_id: str, a1_notation: str, value: str):
 
 
 def _clear_range(sheets_api, spreadsheet_id: str, sheet_name: str, starting_cell: str):
-	# Clear a large range starting from starting_cell downwards
-	# Using a generous range to ensure prior content is removed
-	clear_range = f"{sheet_name}!{starting_cell}:ZZZ1000000"
+	# Clear a reasonable range starting from starting_cell downwards
+	# Using a more reasonable range to avoid Google Sheets API limits
+	clear_range = f"{sheet_name}!{starting_cell}:Z1000"
 	sheets_api.spreadsheets().values().clear(
 		spreadsheetId=spreadsheet_id,
 		range=clear_range,
@@ -131,7 +131,7 @@ def pg_query_output_to_gsheet(request):
 		args = request.args or {}
 		spreadsheet_id = args.get("spreadsheet_id")
 		sheet_name = args.get("sheet_name", "Data")
-		starting_cell = args.get("starting_cell", "A2")
+		starting_cell = args.get("starting_cell", "F2")
 		timestamp_cell = args.get("timestamp_cell")
 		status_cell = args.get("status_cell")
 		value_input_option = args.get("value_input_option", "RAW")
