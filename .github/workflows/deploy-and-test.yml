@@ -1,0 +1,105 @@
+name: Deploy and Test Google Cloud Functions
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'cloud_function/**'
+      - 'cloud_function_gsheet_to_database/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'cloud_function/**'
+      - 'cloud_function_gsheet_to_database/**'
+
+jobs:
+  deploy-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        
+    - name: Authenticate to Google Cloud
+      run: gcloud auth activate-service-account --key-file=${{ secrets.GCP_SA_KEY }}
+      
+    - name: Deploy pg_query_output_to_gsheet function
+      if: contains(github.event.head_commit.modified, 'cloud_function/') || contains(github.event.head_commit.added, 'cloud_function/')
+      run: |
+        gcloud functions deploy pg_query_output_to_gsheet \
+          --gen2 \
+          --region=us-central1 \
+          --runtime=python311 \
+          --source=./cloud_function \
+          --entry-point=pg_query_output_to_gsheet \
+          --trigger-http \
+          --allow-unauthenticated \
+          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}"
+          
+    - name: Deploy gsheet_to_database function
+      if: contains(github.event.head_commit.modified, 'cloud_function_gsheet_to_database/') || contains(github.event.head_commit.added, 'cloud_function_gsheet_to_database/')
+      run: |
+        gcloud functions deploy gsheet_to_database \
+          --gen2 \
+          --region=us-central1 \
+          --runtime=python311 \
+          --source=./cloud_function_gsheet_to_database \
+          --entry-point=gsheet_to_database \
+          --trigger-http \
+          --allow-unauthenticated \
+          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}"
+          
+    - name: Wait for deployment to complete
+      run: sleep 30
+      
+    - name: Test gsheet_to_database function
+      if: contains(github.event.head_commit.modified, 'cloud_function_gsheet_to_database/') || contains(github.event.head_commit.added, 'cloud_function_gsheet_to_database/')
+      run: |
+        echo "Testing gsheet_to_database function..."
+        
+        # Test with the public test sheet
+        RESPONSE=$(curl -s "https://gsheet-to-database-grz2olvbca-uc.a.run.app?spreadsheet_id=12fFS6Z_9vkba66850fTnmty1VdXcBi_Anyu8Xni6r7w&sheet_name=Test%20Data&id_field=candidate_email&export_fields=candidate_status&target_schema=google_sheet_source&target_table=test_export_data")
+        
+        echo "Response: $RESPONSE"
+        
+        # Check if response contains success indicators
+        if echo "$RESPONSE" | grep -q '"status": "ok"'; then
+          echo "✅ Function test PASSED - Import successful"
+        elif echo "$RESPONSE" | grep -q '"error"'; then
+          echo "❌ Function test FAILED - Error in response:"
+          echo "$RESPONSE" | jq '.error' 2>/dev/null || echo "$RESPONSE"
+          exit 1
+        else
+          echo "⚠️  Function test INCONCLUSIVE - Unexpected response format"
+          echo "$RESPONSE"
+          exit 1
+        fi
+        
+    - name: Test pg_query_output_to_gsheet function
+      if: contains(github.event.head_commit.modified, 'cloud_function/') || contains(github.event.head_commit.added, 'cloud_function/')
+      run: |
+        echo "Testing pg_query_output_to_gsheet function..."
+        
+        # Test with a query that uses the test data we imported
+        RESPONSE=$(curl -s "https://pg-query-output-to-gsheet-grz2olvbca-uc.a.run.app?sql=SELECT%20entity_id%2C%20data%2C%20loaded_at_utc%20FROM%20google_sheet_source.test_export_data%20ORDER%20BY%20loaded_at_utc%20DESC&spreadsheet_id=12fFS6Z_9vkba66850fTnmty1VdXcBi_Anyu8Xni6r7w&sheet_name=Test%20Data&starting_cell=F1&include_headers=true")
+        
+        echo "Response: $RESPONSE"
+        
+        # Check if response contains success indicators
+        if echo "$RESPONSE" | grep -q '"status": "ok"'; then
+          echo "✅ Function test PASSED - Export successful"
+        elif echo "$RESPONSE" | grep -q '"error"'; then
+          echo "❌ Function test FAILED - Error in response:"
+          echo "$RESPONSE" | jq '.error' 2>/dev/null || echo "$RESPONSE"
+          exit 1
+        else
+          echo "⚠️  Function test INCONCLUSIVE - Unexpected response format"
+          echo "$RESPONSE"
+          exit 1
+        fi

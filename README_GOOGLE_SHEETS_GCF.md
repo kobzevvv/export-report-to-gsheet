@@ -1,8 +1,11 @@
 ### Neon Postgres → Google Sheets (Cloud Function)
 
-This repo provides a single HTTP Cloud Function that executes a SELECT query against Neon Postgres and writes the results into a Google Sheet.
+This repo provides HTTP Cloud Functions for bidirectional data sync between Neon Postgres and Google Sheets:
 
-Scope: Export only (Postgres → Google Sheets). No BigQuery. No Sheet → DB import.
+1. **Export**: `pg_query_output_to_gsheet` - executes SELECT queries against Neon Postgres and writes results to Google Sheets
+2. **Import**: `gsheet_to_database` - reads specified columns from Google Sheets and loads them into Neon Postgres
+
+**Import Function**: See `README_GSHEET_TO_DATABASE.md` for the separate `gsheet_to_database` function that imports from Sheets to Postgres.
 
 
 ### Prerequisites
@@ -30,7 +33,7 @@ Parameters (query string):
   - One of: `sql` (inline SELECT) or `sql_cell` (A1 notation to read SQL from the sheet)
 - Optional
   - `sheet_name` (default: `Data`)
-  - `starting_cell` (default: `A2`)
+  - `starting_cell` (default: `F2`)
   - `timestamp_cell`: write last-run ISO timestamp to this cell (e.g., `Config!C1`)
   - `status_cell`: write status/row count to this cell (e.g., `Config!D1`)
   - `row_limit` (default: 50000)
@@ -58,6 +61,7 @@ Behavior:
 - Optional:
   - `FUNCTION_NAME`: defaults to `pg_query_output_to_gsheet`
   - In CI: `SECRET_NEON_DATABASE_URL` (Secret Manager ref) or `NEON_DATABASE_URL` (direct value)
+
 
 
 ### Deploy (via GitHub Actions)
@@ -90,8 +94,9 @@ Behavior:
   & "&status_cell=" & ENCODEURL("Config!D1"),
   "Run export"
 )
-```
-4) Click the link to export. If you see 403, grant your identity `roles/run.invoker` on the function.
+```4) Click the link to export. If you see 403, grant your identity `roles/run.invoker` on the function.
+
+**Note**: Replace `YOUR_SPREADSHEET_ID` with your actual spreadsheet ID (found in the URL between `/d/` and `/edit`).
 
 CSV template for `Config` row 1 (A1:D1):
 ```
@@ -110,3 +115,4 @@ CSV template for `Config` row 1 (A1:D1):
 - Prefer IAM-protected invocation over public access. No token needed.
 - Store the Neon connection string in Secret Manager when possible.
 - The function performs read-only queries and rejects non-SELECT statements.
+
