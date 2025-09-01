@@ -122,4 +122,3 @@ jobs:
 
       - name: Print function URL
         run: echo "Function URL: ${{ steps.deploy.outputs.function_url }}"
-# Test trigger - Tue Sep  2 02:05:44 MSK 2025
