@@ -119,6 +119,3 @@ jobs:
             URL=${GOOGLE_CLOUD_FUNCTION_URL:-}
           fi
           echo "function_url=${URL}" >> $GITHUB_OUTPUT
-
-      - name: Print function URL
-        run: echo "Function URL: ${{ steps.deploy.outputs.function_url }}"
