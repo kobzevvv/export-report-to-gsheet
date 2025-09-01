@@ -122,3 +122,4 @@ jobs:
 
       - name: Print function URL
         run: echo "Function URL: ${{ steps.deploy.outputs.function_url }}"
+
