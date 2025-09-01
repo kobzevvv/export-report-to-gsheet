@@ -7,7 +7,7 @@ on:
       - 'cloud_function/**'
       - 'requirements.txt'
       - '.github/workflows/deploy.yml'
-  workflow_dispatch: {}
+  workflow_dispatch: {} 
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
