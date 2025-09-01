@@ -3,7 +3,7 @@
 The `gsheet_to_database` function exports data from Google Sheets to Neon Postgres using a **fixed 3-column structure**: ID, JSON data, and timestamp. This approach eliminates schema brittleness and provides maximum flexibility.
 
 ### Function URL
-`https://gsheet-to-database-grz2olvbca-uc.a.run.app`
+**Live URL**: `https://gsheet-to-database-grz2olvbca-uc.a.run.app`
 
 ### Parameters (query string)
 
@@ -52,20 +52,24 @@ Format: `original_name:new_name` where `:new_name` is optional.
 ```
 =HYPERLINK(
   "https://gsheet-to-database-grz2olvbca-uc.a.run.app"
-  & "?spreadsheet_id=" & "1gc5FIvT92llTKnw4Pe7qScJb9F2rhwAtNnt9UuQmwEQ"
-  & "&sheet_name=" & ENCODEURL("Test Data")
-  & "&columns=" & ENCODEURL("candidate_email,candidate_status")
+  & "?spreadsheet_id=" & ENCODEURL(REGEXEXTRACT(TO_TEXT(SPREADSHEET_URL()), "/d/([^/]+)"))
+  & "&sheet_name=" & ENCODEURL("Data")
+  & "&id_field=" & ENCODEURL("candidate_email")
+  & "&export_fields=" & ENCODEURL("candidate_status,position_name,notes")
   & "&target_schema=" & ENCODEURL("google_sheets_source")
   & "&target_table=" & ENCODEURL("candidate_updates"),
-  "Import to Database"
+  "📥 Import to Database"
 )
 ```
 
-**Note**: Replace `1gc5FIvT92llTKnw4Pe7qScJb9F2rhwAtNnt9UuQmwEQ` with your actual spreadsheet ID (found in the URL).
-
-**Direct URL:**
+**Direct URL Example:**
 ```
-https://gsheet-to-database-grz2olvbca-uc.a.run.app?spreadsheet_id=1gc5FIvT92llTKnw4Pe7qScJb9F2rhwAtNnt9UuQmwEQ&sheet_name=Data_sync_maual&columns=candidate_email,candidate_status&target_schema=google_sheets_source&target_table=candidate_updates
+https://gsheet-to-database-grz2olvbca-uc.a.run.app?spreadsheet_id=YOUR_SPREADSHEET_ID&sheet_name=Data&id_field=candidate_email&export_fields=candidate_status,position_name,notes&target_schema=google_sheets_source&target_table=candidate_updates
+```
+
+**Live Test URL (Working Example):**
+```
+https://gsheet-to-database-grz2olvbca-uc.a.run.app?spreadsheet_id=12fFS6Z_9vkba66850fTnmty1VdXcBi_Anyu8Xni6r7w&sheet_name=Test%20Data&id_field=candidate_email&export_fields=candidate_status&target_schema=google_sheet_source&target_table=test_export_data
 ```
 
 ### Response Format
