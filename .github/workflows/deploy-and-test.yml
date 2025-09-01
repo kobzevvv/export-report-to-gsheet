@@ -25,9 +25,6 @@ jobs:
       with:
         service_account_key: ${{ secrets.GCP_SA_KEY }}
         project_id: ${{ secrets.GCP_PROJECT_ID }}
-        
-    - name: Authenticate to Google Cloud
-      run: gcloud auth activate-service-account --key-file=${{ secrets.GCP_SA_KEY }}
       
     - name: Deploy pg_query_output_to_gsheet function
       if: contains(github.event.head_commit.modified, 'cloud_function/') || contains(github.event.head_commit.added, 'cloud_function/')
