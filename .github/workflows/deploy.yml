@@ -122,4 +122,3 @@ jobs:
 
       - name: Print function URL
         run: echo "Function URL: ${{ steps.deploy.outputs.function_url }}"
-# Cache refresh trigger - Tue Sep  2 01:57:45 MSK 2025
