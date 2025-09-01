@@ -62,7 +62,6 @@ Behavior:
   - `FUNCTION_NAME`: defaults to `pg_query_output_to_gsheet`
   - In CI: `SECRET_NEON_DATABASE_URL` (Secret Manager ref) or `NEON_DATABASE_URL` (direct value)
 
-
 ### Deploy (via GitHub Actions)
 - Add GitHub Secrets:
   - `GBQ_CREDS_JSON`: service account JSON with deploy rights
