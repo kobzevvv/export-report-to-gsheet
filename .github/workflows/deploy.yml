@@ -2,7 +2,7 @@ name: Deploy Cloud Function
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main ]  
     paths:
       - 'cloud_function/**'
       - 'requirements.txt'
