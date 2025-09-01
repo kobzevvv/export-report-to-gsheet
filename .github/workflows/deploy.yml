@@ -120,5 +120,5 @@ jobs:
           fi
           echo "function_url=${URL}" >> $GITHUB_OUTPUT
 
-      - name: Print function URL
+            - name: Print function URL
         run: echo "Function URL: ${{ steps.deploy.outputs.function_url }}"
