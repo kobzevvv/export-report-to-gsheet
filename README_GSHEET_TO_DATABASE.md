@@ -42,7 +42,7 @@ Format: `original_name:new_name` where `:new_name` is optional.
 1. **Header Detection**: Auto-detects header row by matching column names (case-insensitive)
 2. **Column Extraction**: Extracts only specified columns, renames if `original:new` format used
 3. **Missing Columns**: Skipped with warning in status message
-4. **Full Refresh**: Drops and recreates target table on each run
+4. **Smart Upsert**: Updates existing records and appends new ones when table structure matches. Only drops and recreates table if structure is different or table doesn't exist.
 5. **Data Types**: All columns stored as `text`, plus auto-added `loaded_at_utc timestamptz`
 6. **Schema Creation**: Auto-creates target schema if it doesn't exist
 

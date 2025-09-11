@@ -219,22 +219,59 @@ def gsheet_to_database(request):
 		try:
 			with conn.cursor() as cur:
 				cur.execute("SET LOCAL statement_timeout = '60s'")
-				
+
 				# Create schema if not exists
 				cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{target_schema}"')
-				
+
 				# Fixed 3-column table structure
 				fqtn = f'"{target_schema}"."{target_table}"'
-				cur.execute(f"DROP TABLE IF EXISTS {fqtn}")
-				cur.execute(f'''CREATE TABLE {fqtn} (
-					"entity_id" text NOT NULL,
-					"data" jsonb NOT NULL,
-					"loaded_at_utc" timestamptz NOT NULL
-				)''')
-				
-				# Insert data
-				insert_sql = f'INSERT INTO {fqtn} ("entity_id", "data", "loaded_at_utc") VALUES (%s, %s, %s)'
-				cur.executemany(insert_sql, data_rows)
+
+				# Check if table exists and has correct structure
+				cur.execute("""
+					SELECT column_name, data_type
+					FROM information_schema.columns
+					WHERE table_schema = %s AND table_name = %s
+					ORDER BY ordinal_position
+				""", (target_schema, target_table))
+
+				columns = cur.fetchall()
+				expected_columns = [
+					('entity_id', 'text'),
+					('data', 'jsonb'),
+					('loaded_at_utc', 'timestamp with time zone')
+				]
+
+				table_exists_correctly = False
+				if columns:
+					# Check if columns match expected structure
+					if len(columns) == 3:
+						table_exists_correctly = all(
+							col['column_name'] == expected[0] and col['data_type'] == expected[1]
+							for col, expected in zip(columns, expected_columns)
+						)
+
+				if not table_exists_correctly:
+					# Drop and recreate table if structure is wrong or doesn't exist
+					cur.execute(f"DROP TABLE IF EXISTS {fqtn}")
+					cur.execute(f'''CREATE TABLE {fqtn} (
+						"entity_id" text NOT NULL,
+						"data" jsonb NOT NULL,
+						"loaded_at_utc" timestamptz NOT NULL
+					)''')
+					# Insert all data
+					insert_sql = f'INSERT INTO {fqtn} ("entity_id", "data", "loaded_at_utc") VALUES (%s, %s, %s)'
+					cur.executemany(insert_sql, data_rows)
+				else:
+					# Table exists with correct structure - use UPSERT to append/update
+					upsert_sql = f'''
+						INSERT INTO {fqtn} ("entity_id", "data", "loaded_at_utc")
+						VALUES (%s, %s, %s)
+						ON CONFLICT ("entity_id")
+						DO UPDATE SET
+							"data" = EXCLUDED."data",
+							"loaded_at_utc" = EXCLUDED."loaded_at_utc"
+					'''
+					cur.executemany(upsert_sql, data_rows)
 			
 			conn.commit()
 		finally:
