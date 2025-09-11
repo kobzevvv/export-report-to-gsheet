@@ -258,7 +258,7 @@ def gsheet_to_database(request):
 					# Drop and recreate table if structure is wrong or doesn't exist
 					cur.execute(f"DROP TABLE IF EXISTS {fqtn}")
 					cur.execute(f'''CREATE TABLE {fqtn} (
-						"entity_id" text NOT NULL UNIQUE,
+						"entity_id" text NOT NULL,
 						"data" jsonb NOT NULL,
 						"loaded_at_utc" timestamptz NOT NULL
 					)''')
@@ -266,34 +266,10 @@ def gsheet_to_database(request):
 					insert_sql = f'INSERT INTO {fqtn} ("entity_id", "data", "loaded_at_utc") VALUES (%s, %s, %s)'
 					cur.executemany(insert_sql, data_rows)
 				else:
-					# Table exists with correct structure - use UPSERT to append/update
-					# First try to add UNIQUE constraint if it doesn't exist
-					try:
-						cur.execute(f'ALTER TABLE {fqtn} ADD CONSTRAINT IF NOT EXISTS {target_table}_entity_id_unique UNIQUE ("entity_id")')
-					except Exception:
-						# If we can't add the constraint, proceed without it (will handle duplicates differently)
-						pass
-
-					# Try UPSERT first, fall back to INSERT if constraint issues
-					try:
-						upsert_sql = f'''
-							INSERT INTO {fqtn} ("entity_id", "data", "loaded_at_utc")
-							VALUES (%s, %s, %s)
-							ON CONFLICT ("entity_id")
-							DO UPDATE SET
-								"data" = EXCLUDED."data",
-								"loaded_at_utc" = EXCLUDED."loaded_at_utc"
-						'''
-						cur.executemany(upsert_sql, data_rows)
-					except Exception:
-						# If UPSERT fails, fall back to individual INSERTs with error handling
-						insert_sql = f'INSERT INTO {fqtn} ("entity_id", "data", "loaded_at_utc") VALUES (%s, %s, %s)'
-						for row in data_rows:
-							try:
-								cur.execute(insert_sql, row)
-							except Exception:
-								# Skip duplicates - this is simpler than complex conflict resolution
-								pass
+					# Table exists with correct structure - just append all data
+					# No unique constraints needed since deduplication happens later with argmax()
+					insert_sql = f'INSERT INTO {fqtn} ("entity_id", "data", "loaded_at_utc") VALUES (%s, %s, %s)'
+					cur.executemany(insert_sql, data_rows)
 			
 			conn.commit()
 		finally:
