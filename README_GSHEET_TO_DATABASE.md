@@ -42,9 +42,34 @@ Format: `original_name:new_name` where `:new_name` is optional.
 1. **Header Detection**: Auto-detects header row by matching column names (case-insensitive)
 2. **Column Extraction**: Extracts only specified columns, renames if `original:new` format used
 3. **Missing Columns**: Skipped with warning in status message
-4. **Smart Upsert**: Updates existing records and appends new ones when table structure matches. Only drops and recreates table if structure is different or table doesn't exist.
+4. **Append-Only**: Simply appends all new data to the table without any deduplication or conflict resolution. Latest version is determined later in the data model using argmax() or similar logic.
 5. **Data Types**: All columns stored as `text`, plus auto-added `loaded_at_utc timestamptz`
 6. **Schema Creation**: Auto-creates target schema if it doesn't exist
+
+### Data Deduplication Strategy
+
+**Append-Only Design**: This function follows an append-only pattern where:
+- **No Unique Constraints**: The `entity_id` column has no unique constraints
+- **No Conflict Resolution**: Each import appends all data without checking for duplicates
+- **Multiple Records Per Entity**: The same entity can have multiple records with different timestamps
+- **Downstream Deduplication**: Use your data model to get the latest version using `argmax(loaded_at_utc)` or similar logic
+
+**Why This Approach?**
+- **Simplicity**: No complex UPSERT logic or constraint management
+- **Performance**: Fast appends without conflict checking
+- **Flexibility**: Keep full history of changes for auditing/debugging
+- **Reliability**: No dependency conflicts or constraint errors
+
+**Example Data Model Query:**
+```sql
+-- Get latest status for each candidate
+SELECT DISTINCT ON (entity_id)
+    entity_id,
+    data->>'candidate_status' as candidate_status,
+    loaded_at_utc
+FROM google_sheet_source.candidates_with_status_manual
+ORDER BY entity_id, loaded_at_utc DESC;
+```
 
 ### Example Usage
 
@@ -94,15 +119,25 @@ https://gsheet-to-database-grz2olvbca-uc.a.run.app?spreadsheet_id=12fFS6Z_9vkba6
 
 ### Target Table Structure
 
-The function creates tables with this structure:
+The function creates tables with this **append-only** structure:
 ```sql
 CREATE TABLE "schema"."table" (
-  "column1" text,
-  "column2" text,
-  -- ... your specified columns as text
-  "loaded_at_utc" timestamptz NOT NULL
+  "entity_id" text NOT NULL,        -- Can have multiple records per entity
+  "data" jsonb NOT NULL,            -- All exported fields as JSON
+  "loaded_at_utc" timestamptz NOT NULL  -- Timestamp of when data was loaded
 );
+
+-- Example data:
+-- entity_id: "user@example.com"
+-- data: {"status": "approved", "notes": "Good candidate"}
+-- loaded_at_utc: "2025-01-15T10:30:00Z"
+--
+-- entity_id: "user@example.com"    -- Same entity, different import
+-- data: {"status": "hired", "notes": "Position filled"}
+-- loaded_at_utc: "2025-01-16T14:20:00Z"
 ```
+
+**Note**: No unique constraints on `entity_id` - multiple records per entity are allowed and deduplication happens in your data model.
 
 ### Authentication
 
