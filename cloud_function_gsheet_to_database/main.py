@@ -10,6 +10,7 @@ import functions_framework
 from googleapiclient.discovery import build
 from google.auth import default as google_auth_default
 import psycopg
+from psycopg.rows import dict_row
 
 
 def _iso_now() -> str:
