@@ -242,6 +242,9 @@ def gsheet_to_database(request):
 					('loaded_at_utc', 'timestamp with time zone')
 				]
 
+				# Check if table has correct structure (we don't check constraints in detail)
+				# The UNIQUE constraint on entity_id will be validated by the ON CONFLICT behavior
+
 				table_exists_correctly = False
 				if columns:
 					# Check if columns match expected structure
@@ -255,7 +258,7 @@ def gsheet_to_database(request):
 					# Drop and recreate table if structure is wrong or doesn't exist
 					cur.execute(f"DROP TABLE IF EXISTS {fqtn}")
 					cur.execute(f'''CREATE TABLE {fqtn} (
-						"entity_id" text NOT NULL,
+						"entity_id" text NOT NULL UNIQUE,
 						"data" jsonb NOT NULL,
 						"loaded_at_utc" timestamptz NOT NULL
 					)''')
