@@ -215,7 +215,7 @@ def gsheet_to_database(request):
 		if not database_url:
 			return ("NEON_DATABASE_URL is not configured", 500)
 
-		conn = psycopg.connect(database_url, connect_timeout=15)
+		conn = psycopg.connect(database_url, connect_timeout=15, row_factory=dict_row)
 		try:
 			with conn.cursor() as cur:
 				cur.execute("SET LOCAL statement_timeout = '60s'")
