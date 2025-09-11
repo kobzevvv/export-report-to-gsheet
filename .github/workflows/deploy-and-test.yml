@@ -6,11 +6,13 @@ on:
     paths:
       - 'cloud_function/**'
       - 'cloud_function_gsheet_to_database/**'
+      - '.github/workflows/deploy-and-test.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'cloud_function/**'
       - 'cloud_function_gsheet_to_database/**'
+      - '.github/workflows/deploy-and-test.yml'
 
 jobs:
   deploy-and-test:
