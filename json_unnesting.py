@@ -81,10 +81,18 @@ class JsonUnnestingTransformer:
         from_match = re.search(r'FROM\s+([^\s]+)', sql, re.IGNORECASE)
         table_name = from_match.group(1) if from_match else "unknown_table"
 
-        # Extract WHERE clause if present
-        where_match = re.search(r'\bWHERE\b(.+)', sql, re.IGNORECASE | re.DOTALL)
+        # Extract WHERE clause and other clauses separately
+        where_match = re.search(r'\bWHERE\b(.*?)(?:\s+(?:LIMIT|ORDER\s+BY|GROUP\s+BY|HAVING)\b|$)', sql, re.IGNORECASE | re.DOTALL)
         where_clause = where_match.group(1).strip() if where_match else ""
         where_part = f"WHERE {where_clause}" if where_clause else ""
+        
+        # Extract additional clauses (LIMIT, ORDER BY, etc.) that come after WHERE
+        additional_clauses_match = re.search(r'\bWHERE\b.*?\s+((?:LIMIT|ORDER\s+BY|GROUP\s+BY|HAVING)\b.*?)$', sql, re.IGNORECASE | re.DOTALL)
+        if not additional_clauses_match:
+            # Try to find these clauses even without WHERE
+            additional_clauses_match = re.search(r'\s+((?:LIMIT|ORDER\s+BY|GROUP\s+BY|HAVING)\b.*?)$', sql, re.IGNORECASE | re.DOTALL)
+        
+        additional_clauses = additional_clauses_match.group(1).strip() if additional_clauses_match else ""
 
         # Create column expressions for each explicit field
         column_expressions = []
@@ -224,6 +232,7 @@ class JsonUnnestingTransformer:
             {where_part}
         )
         SELECT * FROM base_data
+        {additional_clauses}
         """
 
         return final_sql.strip()
