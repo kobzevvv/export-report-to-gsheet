@@ -100,10 +100,10 @@ class JsonUnnestingTransformer:
                 -- Try 1: Look in nested 'list' array structure (your specific case)
                 (
                     SELECT COALESCE(
-                        item->>{json.dumps(value_key)},
                         item->>'value_text',
                         item->>'answer',
                         item->>'text',
+                        item->>'value',
                         ''
                     )
                     FROM jsonb_array_elements(
@@ -113,10 +113,10 @@ class JsonUnnestingTransformer:
                             ELSE '[]'::jsonb
                         END
                     ) item
-                    WHERE LOWER(item->>{json.dumps(name_key)}) = LOWER({json.dumps(field_title)})
-                       OR LOWER(item->>'question_title') = LOWER({json.dumps(field_title)})
+                    WHERE LOWER(item->>'question_title') = LOWER({json.dumps(field_title)})
                        OR LOWER(item->>'title') = LOWER({json.dumps(field_title)})
                        OR LOWER(item->>'question') = LOWER({json.dumps(field_title)})
+                       OR LOWER(item->>'name') = LOWER({json.dumps(field_title)})
                     LIMIT 1
                 ),
                 -- Try 2: Direct field access if field_title is a JSON key
@@ -127,7 +127,6 @@ class JsonUnnestingTransformer:
                 -- Try 3: Look in array elements for matching title/question/name with flexible matching
                 (
                     SELECT COALESCE(
-                        elem->>{json.dumps(value_key)},
                         elem->>'value_text',
                         elem->>'value',
                         elem->>'text',
@@ -144,8 +143,7 @@ class JsonUnnestingTransformer:
                             ELSE jsonb_build_array({json_column})
                         END
                     ) elem
-                    WHERE LOWER(elem->>{json.dumps(name_key)}) = LOWER({json.dumps(field_title)})
-                       OR LOWER(elem->>'question_title') = LOWER({json.dumps(field_title)})
+                    WHERE LOWER(elem->>'question_title') = LOWER({json.dumps(field_title)})
                        OR LOWER(elem->>'title') = LOWER({json.dumps(field_title)})
                        OR LOWER(elem->>'question') = LOWER({json.dumps(field_title)})
                        OR LOWER(elem->>'name') = LOWER({json.dumps(field_title)})
@@ -156,7 +154,6 @@ class JsonUnnestingTransformer:
                 -- Try 4: Look for field_title as a direct string value in the array
                 (
                     SELECT COALESCE(
-                        elem->>{json.dumps(value_key)},
                         elem->>'value_text',
                         elem->>'value',
                         elem->>'text',
@@ -177,7 +174,6 @@ class JsonUnnestingTransformer:
                 -- Try 5: Try to find the field_title anywhere in the JSON as a value
                 (
                     SELECT COALESCE(
-                        value->>{json.dumps(value_key)},
                         value->>'value_text',
                         value->>'value',
                         value->>'text',
@@ -192,10 +188,10 @@ class JsonUnnestingTransformer:
                         END
                     ) value
                     WHERE LOWER(value->>0)::text = LOWER({json.dumps(field_title)})
-                       OR LOWER(value->>{json.dumps(name_key)})::text = LOWER({json.dumps(field_title)})
                        OR LOWER(value->>'question_title')::text = LOWER({json.dumps(field_title)})
                        OR LOWER(value->>'title')::text = LOWER({json.dumps(field_title)})
                        OR LOWER(value->>'question')::text = LOWER({json.dumps(field_title)})
+                       OR LOWER(value->>'name')::text = LOWER({json.dumps(field_title)})
                     LIMIT 1
                 ),
                 ''
