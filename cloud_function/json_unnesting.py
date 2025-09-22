@@ -63,7 +63,13 @@ class JsonUnnestingTransformer:
             cte_name = f"unnested_{json_column}"
             flattened_cte_name = f"flattened_{json_column}"
 
-            where_part = f"WHERE {where_clause}" if where_clause else ""
+            # Build combined WHERE clause properly
+            json_conditions = f"{json_column} IS NOT NULL AND ((jsonb_typeof({json_column}) = 'array' AND jsonb_array_length({json_column}) > 0) OR jsonb_typeof({json_column}) = 'object')"
+            
+            if where_clause:
+                combined_where = f"WHERE ({where_clause}) AND ({json_conditions})"
+            else:
+                combined_where = f"WHERE {json_conditions}"
 
             # Handle JSON arrays and objects properly
             cte_sql = f"""
@@ -77,12 +83,7 @@ class JsonUnnestingTransformer:
                            ELSE NULL
                        END AS item
                 FROM {table_name}
-                {where_part}
-                WHERE {json_column} IS NOT NULL
-                  AND (
-                      (jsonb_typeof({json_column}) = 'array' AND jsonb_array_length({json_column}) > 0)
-                      OR jsonb_typeof({json_column}) = 'object'
-                  )
+                {combined_where}
             ),
             {flattened_cte_name} AS (
                 SELECT *,
