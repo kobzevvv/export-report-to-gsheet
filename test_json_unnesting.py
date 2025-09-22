@@ -85,8 +85,8 @@ class TestJsonUnnestingTransformer:
 
         transformed = transformer.transform(sql, unnesting_requests)
 
-        # WHERE clause should not be in transformed SQL since we removed it
-        assert "WHERE position_name ILIKE '%flutter%'" not in transformed
+        # WHERE clause should be preserved in the CTE
+        assert "WHERE position_name ILIKE '%flutter%'" in transformed
         assert "unnested_answers_json" in transformed
 
 class TestProcessQueryWithJsonUnnesting:

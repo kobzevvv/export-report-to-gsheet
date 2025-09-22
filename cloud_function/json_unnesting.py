@@ -39,37 +39,40 @@ class JsonUnnestingTransformer:
         for req in unnesting_requests:
             if not all(key in req for key in ["json_column", "name_key", "value_key"]):
                 raise ValueError("Invalid unnesting request: missing required keys")
-        # Remove custom syntax from original query
-        transformed_sql = re.sub(
-            r'\{\{all_fields_as_columns_from\([^}]+\)\}\}',
-            "",
-            sql
-        )
+
+        # Remove template syntax first
+        clean_sql = re.sub(r'\{\{all_fields_as_columns_from\([^}]+\)\}\}', '', sql)
+
+        # Find the table name in FROM clause
+        from_match = re.search(r'FROM\s+([^\s]+)', clean_sql, re.IGNORECASE)
+        table_name = from_match.group(1) if from_match else "unknown_table"
+
+        # Extract WHERE clause if present
+        where_match = re.search(r'\bWHERE\b(.+)', clean_sql, re.IGNORECASE | re.DOTALL)
+        where_clause = where_match.group(1).strip() if where_match else ""
 
         # Generate CTEs for all requests
         ctes = []
-        select_parts = []
 
         for req in unnesting_requests:
             json_column = req["json_column"]
             name_key = req["name_key"]
             value_key = req["value_key"]
 
-            # Find the table name in FROM clause (simplified assumption)
-            from_match = re.search(r'FROM\s+([^\s]+)', sql, re.IGNORECASE)
-            table_name = from_match.group(1) if from_match else "unknown_table"
-
-            # Create CTE for unnesting
+            # Create CTE for unnesting with WHERE clause
             cte_name = f"unnested_{json_column}"
             flattened_cte_name = f"flattened_{json_column}"
 
+            where_part = f"WHERE {where_clause}" if where_clause else ""
+
             cte_sql = f"""
             {cte_name} AS (
-                SELECT id, jsonb_array_elements({json_column}) AS item
+                SELECT *, jsonb_array_elements({json_column}) AS item
                 FROM {table_name}
+                {where_part}
             ),
             {flattened_cte_name} AS (
-                SELECT id,
+                SELECT *,
                        item->>'{name_key}' AS "{json_column}_{name_key}_1",
                        item->>'{value_key}' AS "{json_column}_{value_key}_1"
                 FROM {cte_name}
@@ -77,14 +80,13 @@ class JsonUnnestingTransformer:
             """
 
             ctes.append(cte_sql)
-            select_parts.append(f"SELECT * FROM {flattened_cte_name}")
 
         # Combine CTEs and SELECT
         full_cte = "WITH " + ", ".join(ctes)
-        final_select = " UNION ".join(select_parts) if len(select_parts) > 1 else select_parts[0]
-        transformed_sql = full_cte + " " + final_select
+        last_cte_name = f"flattened_{json_column}"  # Use the last flattened CTE name
+        final_select = f"SELECT * FROM {last_cte_name}"
 
-        return transformed_sql
+        return full_cte + " " + final_select
 
 def process_query_with_json_unnesting(sql: str, database_url: str) -> List[Dict[str, Any]]:
     """Process a query with JSON unnesting and return results"""

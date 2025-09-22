@@ -21,9 +21,18 @@ def _iso_now() -> str:
 	return datetime.now(timezone.utc).isoformat()
 
 
+def _strip_template_syntax(sql: str) -> str:
+	"""Remove JSON unnesting template syntax for validation purposes"""
+	# Pattern to match {{all_fields_as_columns_from(...)}} syntax
+	template_pattern = r'\{\{all_fields_as_columns_from\([^}]+\)\}\}'
+	return re.sub(template_pattern, '', sql).strip()
+
 def _is_select_only(sql: str) -> bool:
 	# Basic guardrail: ensure the first statement is a SELECT and no DDL/DML keywords present
-	statements = [s for s in sqlparse.parse(sql) if str(s).strip()]
+	# First strip template syntax for validation
+	clean_sql = _strip_template_syntax(sql)
+
+	statements = [s for s in sqlparse.parse(clean_sql) if str(s).strip()]
 	if len(statements) != 1:
 		return False
 	stmt = statements[0]
@@ -41,7 +50,9 @@ def _is_select_only(sql: str) -> bool:
 
 def _apply_row_limit(sql: str, row_limit: int) -> str:
 	# If SQL already has LIMIT (naive check), do not add another. Otherwise wrap.
-	if re.search(r"\bLIMIT\b", sql, flags=re.IGNORECASE):
+	# Strip template syntax before checking for LIMIT to avoid interference
+	clean_sql = _strip_template_syntax(sql)
+	if re.search(r"\bLIMIT\b", clean_sql, flags=re.IGNORECASE):
 		return sql
 	# Wrap the original query to safely apply LIMIT
 	return f"SELECT * FROM ( {sql} ) AS subquery_with_limit LIMIT {int(row_limit)}"
