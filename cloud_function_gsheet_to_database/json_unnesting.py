@@ -108,19 +108,9 @@ class JsonUnnestingTransformerRefactored:
             if not all(key in req for key in ["json_column", "name_key", "value_key", "field_titles"]):
                 raise ValueError("Invalid unnesting request: missing required keys")
 
-        # Remove template syntax first (same as original)
-        clean_sql = re.sub(r'\{\{fields_as_columns_from\([^}]+\)\}\}', '', sql)
-
-        # Find the table name in FROM clause (same as original)
-        from_match = re.search(r'FROM\s+([^\s]+)', clean_sql, re.IGNORECASE)
-        table_name = from_match.group(1) if from_match else "unknown_table"
-
-        # Extract WHERE clause if present (same as original)
-        where_match = re.search(r'\bWHERE\b(.+)', clean_sql, re.IGNORECASE | re.DOTALL)
-        where_clause = where_match.group(1).strip() if where_match else ""
-
-        # Early return for no unnesting requests (same as original)
+        # Early return for no unnesting requests - just remove template syntax and return
         if not unnesting_requests:
+            clean_sql = re.sub(r'\{\{fields_as_columns_from\([^}]+\)\}\}', '', sql)
             return clean_sql
 
         # Process first request (same limitation as original)
@@ -129,8 +119,6 @@ class JsonUnnestingTransformerRefactored:
         name_key = req["name_key"]
         value_key = req["value_key"] 
         field_titles = req["field_titles"]
-
-        where_part = f"WHERE {where_clause}" if where_clause else ""
 
         # Generate column expressions using strategy pattern (NEW!)
         column_expressions = []
@@ -142,18 +130,16 @@ class JsonUnnestingTransformerRefactored:
             )
             column_expressions.append(expr)
 
-        # Combine all columns (same as original)
-        all_columns = "*, " + ", ".join(column_expressions)
-
-        # Generate final SQL with CTE (same structure as original)
-        final_sql = f"""
-        WITH base_data AS (
-            SELECT {all_columns}
-            FROM {table_name}
-            {where_part}
+        # Replace the template syntax with the extracted column expressions
+        # This preserves the user's original SELECT clause and column ordering
+        extracted_columns_sql = ",\n".join(column_expressions)
+        
+        # Replace the template syntax with the actual column expressions in the original SQL
+        final_sql = re.sub(
+            r'\{\{fields_as_columns_from\([^}]+\)\}\}',
+            extracted_columns_sql,
+            sql
         )
-        SELECT * FROM base_data
-        """
 
         return final_sql.strip()
     
