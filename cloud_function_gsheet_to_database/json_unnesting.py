@@ -168,7 +168,7 @@ class JsonUnnestingTransformer:
                             ELSE jsonb_build_array({json_column})
                         END
                     ) elem
-                    WHERE LOWER(elem->>0)::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                    WHERE LOWER(elem->>0)::text LIKE LOWER('%{pattern}%')
                     LIMIT 1
                 ),
                 -- Try 5: Try to find the field_title anywhere in the JSON as a value
