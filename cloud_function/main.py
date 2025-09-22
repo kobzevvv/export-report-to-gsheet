@@ -25,7 +25,15 @@ def _strip_template_syntax(sql: str) -> str:
 	"""Remove JSON unnesting template syntax for validation purposes"""
 	# Pattern to match {{all_fields_as_columns_from(...)}} syntax
 	template_pattern = r'\{\{all_fields_as_columns_from\([^}]+\)\}\}'
-	return re.sub(template_pattern, '', sql).strip()
+	clean_sql = re.sub(template_pattern, '', sql)
+
+	# Clean up any malformed SQL after template removal
+	# Fix SELECT clauses with trailing commas
+	clean_sql = re.sub(r'SELECT\s*,\s*', 'SELECT ', clean_sql, flags=re.IGNORECASE)
+	# Fix SELECT * followed by nothing
+	clean_sql = re.sub(r'SELECT\s*\*\s*,?\s*$', 'SELECT 1', clean_sql, flags=re.IGNORECASE)
+
+	return clean_sql.strip()
 
 def _is_select_only(sql: str) -> bool:
 	# Basic guardrail: ensure the first statement is a SELECT and no DDL/DML keywords present
@@ -277,8 +285,6 @@ def pg_query_output_to_gsheet(request):
 		if not _is_select_only(query_sql):
 			return ("Only a single SELECT statement is allowed", 400)
 
-		final_sql = _apply_row_limit(query_sql, row_limit)
-
 		# Connect to Neon Postgres and execute query
 		database_url = os.getenv("NEON_DATABASE_URL")
 		if not database_url:
@@ -286,7 +292,14 @@ def pg_query_output_to_gsheet(request):
 
 		# Try to use JSON unnesting functionality first
 		try:
-			rows = process_query_with_json_unnesting(final_sql, database_url)
+			rows = process_query_with_json_unnesting(query_sql, database_url)
+			# Apply row limit to results if needed
+			# Check if original SQL already has LIMIT (after stripping template syntax)
+			clean_sql = _strip_template_syntax(query_sql)
+			has_existing_limit = bool(re.search(r"\bLIMIT\b", clean_sql, flags=re.IGNORECASE))
+
+			if not has_existing_limit and row_limit != float('inf') and len(rows) > row_limit:
+				rows = rows[:row_limit]
 		except ImportError:
 			# Fall back to direct execution if JSON unnesting is not available
 			conn = psycopg.connect(database_url, connect_timeout=15, row_factory=dict_row)
@@ -296,10 +309,18 @@ def pg_query_output_to_gsheet(request):
 					cur.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
 					cur.execute("SET LOCAL statement_timeout = '60s'")
 
-					cur.execute(final_sql)
+					cur.execute(query_sql)
 					rows = cur.fetchall()
 			finally:
 				conn.close()
+
+		# Apply row limit to results if needed
+		# Check if original SQL already has LIMIT (after stripping template syntax)
+		clean_sql = _strip_template_syntax(query_sql)
+		has_existing_limit = bool(re.search(r"\bLIMIT\b", clean_sql, flags=re.IGNORECASE))
+
+		if not has_existing_limit and row_limit != float('inf') and len(rows) > row_limit:
+			rows = rows[:row_limit]
 
 		values = _to_sheet_values(rows, include_headers=include_headers)
 
