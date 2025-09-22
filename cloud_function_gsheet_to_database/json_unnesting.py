@@ -122,11 +122,8 @@ class JsonUnnestingTransformer:
                        OR LOWER(item->>'name') LIKE LOWER('%{pattern}%')
                     LIMIT 1
                 ),
-                -- Try 2: Direct field access if field_title is a JSON key
-                CASE WHEN {json_column} ? {json.dumps(field_title, ensure_ascii=False)}
-                     THEN {json_column}->>{json.dumps(field_title, ensure_ascii=False)}
-                     ELSE NULL
-                END,
+                -- Try 2: Direct field access (skipped for pattern matching approach)
+                NULL,
                 -- Try 3: Look in array elements for matching title/question/name with flexible matching
                 (
                     SELECT COALESCE(
@@ -190,7 +187,7 @@ class JsonUnnestingTransformer:
                             ELSE jsonb_build_array({json_column})
                         END
                     ) value
-                    WHERE LOWER(value->>0)::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                    WHERE LOWER(value->>0)::text LIKE LOWER('%{pattern}%')
                        OR LOWER(value->>'question_title')::text LIKE LOWER('%{pattern}%')
                        OR LOWER(value->>'title')::text LIKE LOWER('%{pattern}%')
                        OR LOWER(value->>'question')::text LIKE LOWER('%{pattern}%')
