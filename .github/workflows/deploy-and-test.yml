@@ -49,12 +49,12 @@ jobs:
           --entry-point=pg_query_output_to_gsheet \
           --trigger-http \
           --allow-unauthenticated \
-          --update-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
+          --clear-env-vars \
+          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
           --memory=512MB \
           --timeout=540s \
           --max-instances=1 \
-          --quiet \
-          --remove-env-vars=PUBLIC_TRIGGER_TOKEN
+          --quiet
 
     - name: Deploy gsheet_to_database function
       run: |
@@ -71,12 +71,12 @@ jobs:
           --entry-point=gsheet_to_database \
           --trigger-http \
           --allow-unauthenticated \
-          --update-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
+          --clear-env-vars \
+          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
           --memory=512MB \
           --timeout=540s \
           --max-instances=1 \
-          --quiet \
-          --remove-env-vars=PUBLIC_TRIGGER_TOKEN
+          --quiet
           
     - name: Wait for deployment to complete
       run: sleep 30
