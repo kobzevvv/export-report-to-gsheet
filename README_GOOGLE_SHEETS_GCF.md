@@ -98,7 +98,40 @@ Behavior:
 - `requirements.txt` – root-level dependencies (dev/local)
 - `.github/workflows/deploy.yml` – GitHub Actions deployment
 - `env.example` – sample environment variables
+- `check-and-fix-deployments.sh` – Script to resolve stuck deployments
+- `fix-iam-permissions.sh` – Script to fix IAM permission issues
 
+
+### Troubleshooting Deployment Issues
+
+If you encounter deployment failures, these scripts can help resolve common issues:
+
+#### 409 Conflict Errors
+```bash
+# Check for and resolve stuck deployments
+./check-and-fix-deployments.sh
+```
+
+#### IAM Permission Errors
+```bash
+# Fix IAM permissions for the compute service account
+./fix-iam-permissions.sh
+```
+
+#### Common Issues and Solutions
+
+1. **"unable to queue the operation" (409 error)**:
+   - Run `./check-and-fix-deployments.sh` to cancel stuck builds
+   - Wait 5-10 minutes before retrying deployment
+
+2. **IAM Permission Warnings**:
+   - Run `./fix-iam-permissions.sh` to grant necessary roles
+   - The script will grant: `cloudbuild.builds.builder`, `cloudfunctions.developer`, `run.developer`, `storage.admin`, `artifactregistry.reader`, `serviceusage.serviceUsageConsumer`
+
+3. **Stuck Deployments**:
+   - Check Cloud Console > Cloud Functions > Your Function
+   - If stuck in non-ACTIVE state, delete and redeploy
+   - Use the check-and-fix-deployments.sh script for automation
 
 ### Environment
 - `NEON_DATABASE_URL`: Postgres connection string (sslmode=require)

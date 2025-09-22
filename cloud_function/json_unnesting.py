@@ -92,18 +92,37 @@ class JsonUnnestingTransformer:
         column_expressions = []
         for i, field_title in enumerate(field_titles):
             safe_column_name = self._make_safe_column_name(field_title, i)
-            
+
             # Create SQL expression to extract this specific field value
-            # Look for the field title in the JSON array and get its value
+            # Try multiple approaches to find the field value and gracefully handle missing fields
             extract_expr = f"""
-            COALESCE((
-                SELECT elem->>{json.dumps(value_key)}
-                FROM jsonb_array_elements({json_column}) elem
-                WHERE elem->>{json.dumps(name_key)} = {json.dumps(field_title)}
-                LIMIT 1
-            ), '') AS "{safe_column_name}"
+            COALESCE(
+                -- Try 1: Direct field access if field_title is a JSON key
+                CASE WHEN {json_column} ? {json.dumps(field_title)}
+                     THEN {json_column}->>{json.dumps(field_title)}
+                     ELSE NULL
+                END,
+                -- Try 2: Look in array elements for matching title/question/name
+                (
+                    SELECT COALESCE(elem->>'value', elem->>'text', elem->>'answer', elem->>'response', '')
+                    FROM jsonb_array_elements({json_column}) elem
+                    WHERE elem->>'title' = {json.dumps(field_title)}
+                       OR elem->>'question' = {json.dumps(field_title)}
+                       OR elem->>'name' = {json.dumps(field_title)}
+                       OR elem->>'label' = {json.dumps(field_title)}
+                    LIMIT 1
+                ),
+                -- Try 3: Look for field_title as a direct string value in the array
+                (
+                    SELECT COALESCE(elem->>'value', elem->>'text', elem->>'answer', elem->>'response', '')
+                    FROM jsonb_array_elements({json_column}) elem
+                    WHERE elem = {json.dumps(field_title)}::jsonb
+                    LIMIT 1
+                ),
+                ''
+            ) AS "{safe_column_name}"
             """
-            
+
             column_expressions.append(extract_expr.strip())
 
         # Combine all columns

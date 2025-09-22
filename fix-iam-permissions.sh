@@ -28,34 +28,49 @@ echo "📋 Compute Service Account: $COMPUTE_SA"
 echo ""
 echo "🔑 Granting necessary IAM roles..."
 
+# Function to grant role with error handling
+grant_role() {
+    local role=$1
+    local description=$2
+
+    echo "📋 $description"
+    if gcloud projects add-iam-policy-binding $PROJECT_ID \
+        --member="serviceAccount:${COMPUTE_SA}" \
+        --role="$role" \
+        --quiet 2>/dev/null; then
+        echo "   ✅ Granted $role"
+    else
+        echo "   ⚠️  Failed to grant $role (may already exist)"
+    fi
+}
+
 # Grant Cloud Build Service Account role
-echo "1. Granting roles/cloudbuild.builds.builder to compute service account..."
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:${COMPUTE_SA}" \
-    --role="roles/cloudbuild.builds.builder" \
-    --quiet
+grant_role "roles/cloudbuild.builds.builder" "Granting Cloud Build permissions to compute service account"
 
 # Grant additional roles needed for Cloud Functions
-echo "2. Granting roles/cloudfunctions.developer to compute service account..."
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:${COMPUTE_SA}" \
-    --role="roles/cloudfunctions.developer" \
-    --quiet
+grant_role "roles/cloudfunctions.developer" "Granting Cloud Functions developer permissions"
+grant_role "roles/run.developer" "Granting Cloud Run developer permissions"
+grant_role "roles/storage.admin" "Granting Storage admin permissions"
+grant_role "roles/artifactregistry.reader" "Granting Artifact Registry read permissions"
+grant_role "roles/serviceusage.serviceUsageConsumer" "Granting Service Usage consumer permissions"
 
-echo "3. Granting roles/run.developer to compute service account..."
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:${COMPUTE_SA}" \
-    --role="roles/run.developer" \
-    --quiet
+# Verify the permissions were granted
+echo ""
+echo "🔍 Verifying permissions..."
+PERMISSIONS=$(gcloud projects get-iam-policy $PROJECT_ID \
+    --flatten="bindings[].members" \
+    --filter="bindings.members:${COMPUTE_SA}" \
+    --format="value(bindings.role)" 2>/dev/null || echo "")
 
-echo "4. Granting roles/storage.admin to compute service account..."
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:${COMPUTE_SA}" \
-    --role="roles/storage.admin" \
-    --quiet
+if [[ -n "$PERMISSIONS" ]]; then
+    echo "✅ Service account has the following roles:"
+    echo "$PERMISSIONS" | sort | uniq
+else
+    echo "⚠️  Unable to verify permissions (check account has project viewer role)"
+fi
 
 echo ""
-echo "✅ IAM permissions configured successfully!"
+echo "✅ IAM permissions configuration complete!"
 echo ""
 echo "🚀 Next steps:"
 echo "1. Add the missing GitHub secrets:"

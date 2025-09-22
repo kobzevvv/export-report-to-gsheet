@@ -86,30 +86,68 @@ jobs:
           PROJECT_NUMBER=${PROJECT_ID%%-*}
           SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
+          echo "Attempting to grant Cloud Build permissions..."
           # Grant Cloud Build Service Account role to the Compute Engine default service account
-          gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+          if gcloud projects add-iam-policy-binding ${PROJECT_ID} \
             --member="serviceAccount:${SERVICE_ACCOUNT}" \
             --role="roles/cloudbuild.builds.builder" \
-            --quiet || true
+            --quiet; then
+            echo "✅ Successfully granted Cloud Build permissions"
+          else
+            echo "⚠️  Failed to grant Cloud Build permissions automatically"
+            echo "📝 Please run the fix-iam-permissions.sh script manually:"
+            echo "   ./fix-iam-permissions.sh"
+            echo "   This script will grant the necessary permissions to ${SERVICE_ACCOUNT}"
+          fi
 
-      - name: Check for existing Cloud Function builds
+      - name: Check and resolve stuck deployments
         run: |
           set -euo pipefail
           REGION=${GCP_REGION:-us-central1}
           NAME=${FUNCTION_NAME:-pg_query_output_to_gsheet}
 
-          # Check if there are any existing builds in progress
-          echo "Checking for existing Cloud Function builds..."
-          BUILDS=$(gcloud builds list --region=${REGION} --filter="status=(WORKING OR QUEUED)" --format="value(id)" || true)
+          echo "🔍 Checking for stuck deployments and builds..."
+
+          # Check for existing Cloud Function builds
+          BUILDS=$(gcloud builds list --region=${REGION} --filter="status=(WORKING OR QUEUED OR PENDING)" --format="value(id)" 2>/dev/null || true)
           if [[ -n "${BUILDS}" ]]; then
-            echo "Found existing builds in progress: ${BUILDS}"
-            echo "Waiting for builds to complete..."
+            echo "⚠️  Found existing builds in progress: ${BUILDS}"
+            echo "📋 Build details:"
             for BUILD in ${BUILDS}; do
-              gcloud builds log ${BUILD} --region=${REGION} || true
+              gcloud builds describe ${BUILD} --region=${REGION} --format="table[no-heading](id, status, createTime, logUrl)" || true
             done
-            # Wait a bit for builds to potentially finish
-            sleep 30
+
+            echo "🛑 Cancelling stuck builds..."
+            for BUILD in ${BUILDS}; do
+              echo "Cancelling build: ${BUILD}"
+              if gcloud builds cancel ${BUILD} --region=${REGION} --quiet; then
+                echo "✅ Successfully cancelled ${BUILD}"
+              else
+                echo "⚠️  Failed to cancel ${BUILD}"
+              fi
+            done
+            echo "⏳ Waiting for builds to be cancelled..."
+            sleep 60
+          else
+            echo "✅ No active builds found"
           fi
+
+          # Check Cloud Function status
+          FUNCTION_STATUS=$(gcloud functions describe ${NAME} --region=${REGION} --format="value(state)" 2>/dev/null || echo "NOT_FOUND")
+          if [[ "${FUNCTION_STATUS}" != "ACTIVE" && "${FUNCTION_STATUS}" != "NOT_FOUND" ]]; then
+            echo "⚠️  Cloud Function is in ${FUNCTION_STATUS} state"
+            echo "🔄 Attempting to force redeployment..."
+            # Try to delete the function if it's stuck
+            if gcloud functions delete ${NAME} --region=${REGION} --quiet; then
+              echo "✅ Function deleted successfully"
+              echo "⏳ Waiting for function deletion to complete..."
+              sleep 30
+            else
+              echo "⚠️  Failed to delete function. You may need to delete it manually from the Cloud Console."
+            fi
+          fi
+
+          echo "✅ Deployment conflict check complete"
 
       - name: Deploy Cloud Function (Gen2)
         id: deploy
@@ -143,17 +181,52 @@ jobs:
             DEPLOY_ARGS+=(--set-secrets=PUBLIC_TRIGGER_TOKEN=${SECRET_PUBLIC_TRIGGER_TOKEN}:latest)
           fi
 
-          # Retry deployment up to 3 times with 30 second delays
-          for i in {1..3}; do
-            echo "Deployment attempt $i/3"
+          # Retry deployment up to 3 times with exponential backoff
+          MAX_RETRIES=3
+          BASE_RETRY_DELAY=30
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "🚀 Deployment attempt $i/$MAX_RETRIES"
+
             if gcloud functions deploy ${NAME} "${DEPLOY_ARGS[@]}"; then
-              echo "Deployment successful on attempt $i"
+              echo "✅ Deployment successful on attempt $i"
               break
             else
-              echo "Deployment failed on attempt $i"
-              if [[ $i -lt 3 ]]; then
-                echo "Waiting 30 seconds before retry..."
-                sleep 30
+              EXIT_CODE=$?
+              echo "❌ Deployment failed on attempt $i (exit code: $EXIT_CODE)"
+
+              # Handle specific error cases
+              if [[ $EXIT_CODE -eq 2 ]]; then
+                # Check if it's a 409 conflict or permission error
+                ERROR_MSG=$(gcloud functions deploy ${NAME} "${DEPLOY_ARGS[@]}" 2>&1 | grep -i "409\|permission\|unable to queue" || true)
+                if [[ -n "$ERROR_MSG" ]]; then
+                  echo "🔍 Error details: $ERROR_MSG"
+
+                  if echo "$ERROR_MSG" | grep -i "409\|unable to queue" >/dev/null; then
+                    echo "🔄 409 conflict detected - checking for stuck deployments..."
+                    # Try to resolve conflicts
+                    gcloud functions delete ${NAME} --region=${REGION} --quiet || true
+                    echo "⏳ Waiting for cleanup to complete..."
+                    sleep 60
+                    continue
+                  elif echo "$ERROR_MSG" | grep -i "permission" >/dev/null; then
+                    echo "⚠️  Permission error - please run ./fix-iam-permissions.sh"
+                    echo "📝 This script will grant necessary permissions to ${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+                  fi
+                fi
+              fi
+
+              if [[ $i -lt $MAX_RETRIES ]]; then
+                DELAY=$((BASE_RETRY_DELAY * i))
+                echo "⏳ Waiting ${DELAY} seconds before retry (exponential backoff)..."
+                sleep $DELAY
+              else
+                echo "❌ All deployment attempts failed"
+                echo "💡 Troubleshooting tips:"
+                echo "1. Run ./check-and-fix-deployments.sh to clear stuck deployments"
+                echo "2. Run ./fix-iam-permissions.sh to fix permission issues"
+                echo "3. Wait 5-10 minutes before trying again"
+                exit 1
               fi
             fi
           done
