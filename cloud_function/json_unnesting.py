@@ -141,7 +141,7 @@ class JsonUnnestingTransformer:
                         CASE
                             WHEN jsonb_typeof({json_column}) = 'array'
                             THEN {json_column}
-                            ELSE jsonb_array_elements_text(VALUES ({json_column})::text)::jsonb
+                            ELSE jsonb_build_array({json_column})
                         END
                     ) elem
                     WHERE LOWER(elem->>{json.dumps(name_key)}) = LOWER({json.dumps(field_title)})
