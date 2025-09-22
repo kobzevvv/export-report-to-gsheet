@@ -179,7 +179,7 @@ def _require_token_if_configured(token_param: typing.Optional[str]):
 			raise PermissionError("Unauthorized: invalid token")
 
 
-def _get_enhanced_error_message(exception: Exception, request) -> str:
+def _get_enhanced_error_message(exception: Exception, request, sql: str = None) -> str:
 	"""Provide user-friendly error messages for common issues"""
 	error_str = str(exception)
 	args = request.args or {}
@@ -202,7 +202,8 @@ def _get_enhanced_error_message(exception: Exception, request) -> str:
 
 	# Check for SQL errors
 	if "sql" in error_str.lower() or "syntax" in error_str.lower():
-		return f"❌ SQL QUERY ERROR: The SQL query in the sheet is invalid. Please check the SQL syntax and ensure it's a SELECT statement only"
+		sql_preview = f"\n\nSQL Query: {sql[:200]}..." if sql and len(sql) > 200 else f"\n\nSQL Query: {sql}" if sql else ""
+		return f"❌ SQL QUERY ERROR: The SQL query in the sheet is invalid. Please check the SQL syntax and ensure it's a SELECT statement only.{sql_preview}\n\nOriginal Error: {exception}"
 
 	# Default error message
 	return f"❌ FUNCTION ERROR: {type(exception).__name__}: {exception}"
@@ -327,7 +328,7 @@ def pg_query_output_to_gsheet(request):
 		return (str(e), 401)
 	except Exception as e:
 		# Enhanced error handling for Google API and permission issues
-		error_message = _get_enhanced_error_message(e, request)
+		error_message = _get_enhanced_error_message(e, request, query_sql)
 
 		# Best-effort status write on error
 		try:

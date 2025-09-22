@@ -41,6 +41,35 @@ Parameters (query string):
   - `include_headers` (default: true)
   - `value_input_option` (`RAW` or `USER_ENTERED`, default `RAW`)
 
+### 🔧 JSON Unnesting Feature
+
+**NEW:** Automatically flatten JSON columns into separate columns using the `{{all_fields_as_columns_from(...)}}` syntax.
+
+#### Syntax
+```sql
+SELECT *, {{all_fields_as_columns_from(json_column, question_title, value_text)}}
+FROM your_table
+WHERE conditions...
+```
+
+#### Parameters
+- `json_column`: Name of the JSON/JSONB column containing array data
+- `name_key`: JSON field to use as column names (e.g., "question_title")
+- `value_key`: JSON field to use as column values (e.g., "value_text")
+
+#### Example
+```sql
+-- Input JSON column: answers_json
+-- [{"question_title": "Experience", "value_text": "5 years"}, {"question_title": "Skills", "value_text": "Python, SQL"}]
+
+SELECT *,
+       {{all_fields_as_columns_from(answers_json, question_title, value_text)}}
+FROM public_marts.candidates
+WHERE position_name ILIKE '%flutter%'
+```
+
+**Result:** Creates columns like `answers_json_question_title_1`, `answers_json_value_text_1`, etc. with flattened data.
+
 Behavior:
 - Reads SQL (prefer `sql_cell` to keep URLs short)
 - Enforces single SELECT, applies `row_limit` if none specified
@@ -102,6 +131,11 @@ CSV template for `Config` row 1 (A1:D1):
 "https://pg-query-output-to-gsheet-grz2olvbca-uc.a.run.app","SELECT * FROM public_marts.candidates WHERE position_name ILIKE '%flutter%'","",""
 ```
 
+**JSON Unnesting CSV Template:**
+```
+"https://pg-query-output-to-gsheet-grz2olvbca-uc.a.run.app","SELECT *, {{all_fields_as_columns_from(answers_json, question_title, value_text)}} FROM public_marts.candidates WHERE position_name ILIKE '%flutter%'","",""
+```
+
 ### Real Examples
 
 #### Example 1: Simple Export
@@ -118,6 +152,41 @@ https://pg-query-output-to-gsheet-grz2olvbca-uc.a.run.app?spreadsheet_id=YOUR_SP
 ```
 https://pg-query-output-to-gsheet-grz2olvbca-uc.a.run.app?spreadsheet_id=YOUR_SPREADSHEET_ID&sql=SELECT%20u.id%2C%20u.name%2C%20u.email%2C%20p.title%20FROM%20users%20u%20JOIN%20profiles%20p%20ON%20u.id%20=%20p.user_id%20WHERE%20u.created_at%20%3E%20%272024-01-01%27&sheet_name=UserProfiles&starting_cell=A1&timestamp_cell=Config!C1&status_cell=Config!D1&row_limit=1000&include_headers=true&value_input_option=RAW
 ```
+
+#### Example 4: JSON Unnesting - Export All Candidate Survey Data
+```
+https://pg-query-output-to-gsheet-grz2olvbca-uc.a.run.app?spreadsheet_id=YOUR_SPREADSHEET_ID&sql=SELECT%20*%20FROM%20public_marts.candidates%20WHERE%20position_name%20ILIKE%20%27%25flutter%25%27%20%7B%7Ball_fields_as_columns_from(answers_json%2C%20question_title%2C%20value_text)%7D%7D&sheet_name=CandidateSurveys&starting_cell=A1
+```
+
+**Decoded SQL:**
+```sql
+SELECT *
+FROM public_marts.candidates
+WHERE position_name ILIKE '%flutter%'
+{{all_fields_as_columns_from(answers_json, question_title, value_text)}}
+```
+
+**Result:** Creates flattened columns like:
+- `answers_json_question_title_1` → "What is your experience level?"
+- `answers_json_value_text_1` → "5+ years"
+- `answers_json_question_title_2` → "Preferred programming languages"
+- `answers_json_value_text_2` → "Python, JavaScript, SQL"
+
+#### Example 5: Multiple JSON Fields with Complex Query
+```
+https://pg-query-output-to-gsheet-grz2olvbca-uc.a.run.app?spreadsheet_id=YOUR_SPREADSHEET_ID&sql=SELECT%20c.id%2C%20c.name%2C%20c.email%20FROM%20public_marts.candidates%20c%20WHERE%20c.status%20%3D%20%27active%27%20%7B%7Ball_fields_as_columns_from(c.preferences%2C%20setting%2C%20value)%7D%7D%20%7B%7Ball_fields_as_columns_from(c.survey_responses%2C%20question%2C%20answer)%7D%7D&sheet_name=CandidateDetails&starting_cell=A1&include_headers=true
+```
+
+**Decoded SQL:**
+```sql
+SELECT c.id, c.name, c.email
+FROM public_marts.candidates c
+WHERE c.status = 'active'
+{{all_fields_as_columns_from(c.preferences, setting, value)}}
+{{all_fields_as_columns_from(c.survey_responses, question, answer)}}
+```
+
+**Result:** Multiple flattened column sets from different JSON fields.
 
 
 ### Troubleshooting

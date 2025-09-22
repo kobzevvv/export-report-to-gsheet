@@ -162,6 +162,12 @@ CREATE TABLE "schema"."table" (
 ### Related Functions
 
 - **Export**: Use `pg_query_output_to_gsheet` to export data from Postgres to Sheets
+- **JSON Unnesting**: Use the new JSON unnesting feature in the export function to flatten imported JSON data:
+  ```sql
+  SELECT *,
+         {{all_fields_as_columns_from(data, field_name, field_value)}}
+  FROM google_sheet_source.your_imported_table
+  ```
 - See `README_GOOGLE_SHEETS_GCF.md` for export function documentation
 
 ### 🧪 Live Test Environment
