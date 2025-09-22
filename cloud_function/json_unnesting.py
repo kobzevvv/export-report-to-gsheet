@@ -40,71 +40,84 @@ class JsonUnnestingTransformer:
             if not all(key in req for key in ["json_column", "name_key", "value_key"]):
                 raise ValueError("Invalid unnesting request: missing required keys")
 
-        # Remove template syntax first
-        clean_sql = re.sub(r'\{\{all_fields_as_columns_from\([^}]+\)\}\}', '', sql)
-
-        # Find the table name in FROM clause
-        from_match = re.search(r'FROM\s+([^\s]+)', clean_sql, re.IGNORECASE)
-        table_name = from_match.group(1) if from_match else "unknown_table"
-
-        # Extract WHERE clause if present
-        where_match = re.search(r'\bWHERE\b(.+)', clean_sql, re.IGNORECASE | re.DOTALL)
-        where_clause = where_match.group(1).strip() if where_match else ""
+        # Remove template syntax to get clean user query
+        user_query = re.sub(r'\{\{all_fields_as_columns_from\([^}]+\)\}\}', '', sql).strip()
+        # Clean up any trailing commas after SELECT *,
+        user_query = re.sub(r'SELECT\s*\*\s*,\s*FROM', 'SELECT * FROM', user_query, flags=re.IGNORECASE)
 
         # Generate CTEs for all requests
         ctes = []
-
-        for req in unnesting_requests:
+        
+        for i, req in enumerate(unnesting_requests):
             json_column = req["json_column"]
             name_key = req["name_key"]
             value_key = req["value_key"]
 
-            # Create CTE for unnesting with WHERE clause
-            cte_name = f"unnested_{json_column}"
-            flattened_cte_name = f"flattened_{json_column}"
-
-            # Build combined WHERE clause properly
-            json_conditions = f"{json_column} IS NOT NULL AND ((jsonb_typeof({json_column}) = 'array' AND jsonb_array_length({json_column}) > 0) OR jsonb_typeof({json_column}) = 'object')"
+            # Step 1: JSON preparation CTE
+            json_prep_cte = f"json_prep_{i}" if i > 0 else "json_prep"
+            source_table = f"json_prep_{i-1}" if i > 0 else f"({user_query})"
             
-            if where_clause:
-                combined_where = f"WHERE ({where_clause}) AND ({json_conditions})"
-            else:
-                combined_where = f"WHERE {json_conditions}"
-
-            # Handle JSON arrays and objects properly
-            cte_sql = f"""
-            {cte_name} AS (
+            json_prep_sql = f"""
+            {json_prep_cte} AS (
                 SELECT *,
-                       CASE
-                           WHEN jsonb_typeof({json_column}) = 'array' AND jsonb_array_length({json_column}) > 0
-                           THEN jsonb_array_elements({json_column})
+                       jsonb_typeof({json_column}) as json_type_{json_column},
+                       CASE 
+                           WHEN jsonb_typeof({json_column}) = 'array' 
+                           THEN jsonb_array_length({json_column}) > 0
                            WHEN jsonb_typeof({json_column}) = 'object'
-                           THEN jsonb_build_object('{name_key}', {json_column}->>'{name_key}', '{value_key}', {json_column}->>'{value_key}')
-                           ELSE NULL
-                       END AS item
-                FROM {table_name}
-                {combined_where}
-            ),
-            {flattened_cte_name} AS (
-                SELECT *,
-                       CASE
-                           WHEN item->>'{name_key}' IS NOT NULL THEN item->>'{name_key}'
-                           ELSE ''
-                       END AS "{json_column}_{name_key}_1",
-                       CASE
-                           WHEN item->>'{value_key}' IS NOT NULL THEN item->>'{value_key}'
-                           ELSE ''
-                       END AS "{json_column}_{value_key}_1"
-                FROM {cte_name}
-                WHERE item IS NOT NULL
-            )
-            """
+                           THEN {json_column} IS NOT NULL
+                           ELSE false
+                       END as has_valid_{json_column}
+                FROM {source_table} base_query
+                WHERE CASE 
+                          WHEN jsonb_typeof({json_column}) = 'array' 
+                          THEN jsonb_array_length({json_column}) > 0
+                          WHEN jsonb_typeof({json_column}) = 'object'
+                          THEN {json_column} IS NOT NULL
+                          ELSE false
+                      END
+            )"""
 
-            ctes.append(cte_sql)
+            # Step 2: JSON unnesting CTE using LATERAL
+            unnested_cte = f"unnested_{json_column}"
+            unnested_sql = f"""
+            {unnested_cte} AS (
+                SELECT base.*,
+                       item
+                FROM {json_prep_cte} base
+                CROSS JOIN LATERAL (
+                    SELECT CASE 
+                               WHEN base.json_type_{json_column} = 'array'
+                               THEN elem
+                               WHEN base.json_type_{json_column} = 'object'
+                               THEN jsonb_build_object('{name_key}', base.{json_column}->>'{name_key}', '{value_key}', base.{json_column}->>'{value_key}')
+                               ELSE NULL
+                           END as item
+                    FROM LATERAL jsonb_array_elements(
+                        CASE WHEN base.json_type_{json_column} = 'array' 
+                             THEN base.{json_column}
+                             ELSE jsonb_build_array(jsonb_build_object('{name_key}', base.{json_column}->>'{name_key}', '{value_key}', base.{json_column}->>'{value_key}'))
+                        END
+                    ) as elem
+                ) lateral_unnest
+                WHERE item IS NOT NULL
+            )"""
+
+            # Step 3: Column flattening CTE
+            flattened_cte = f"flattened_{json_column}"
+            flattened_sql = f"""
+            {flattened_cte} AS (
+                SELECT *,
+                       COALESCE(item->>'{name_key}', '') AS "{json_column}_{name_key}_1",
+                       COALESCE(item->>'{value_key}', '') AS "{json_column}_{value_key}_1"
+                FROM {unnested_cte}
+            )"""
+
+            ctes.extend([json_prep_sql, unnested_sql, flattened_sql])
 
         # Combine CTEs and SELECT
         full_cte = "WITH " + ", ".join(ctes)
-        last_cte_name = f"flattened_{json_column}"  # Use the last flattened CTE name
+        last_cte_name = f"flattened_{unnesting_requests[-1]['json_column']}"
         final_select = f"SELECT * FROM {last_cte_name}"
 
         return full_cte + " " + final_select
