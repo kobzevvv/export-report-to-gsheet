@@ -37,6 +37,10 @@ jobs:
     - name: Deploy pg_query_output_to_gsheet function
       run: |
         echo "Deploying pg_query_output_to_gsheet function..."
+        echo "Current directory: $(pwd)"
+        echo "Cloud function directory contents:"
+        ls -la ./cloud_function/
+
         gcloud functions deploy pg_query_output_to_gsheet \
           --gen2 \
           --region=us-central1 \
@@ -45,11 +49,19 @@ jobs:
           --entry-point=pg_query_output_to_gsheet \
           --trigger-http \
           --allow-unauthenticated \
-          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}"
+          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
+          --memory=512MB \
+          --timeout=540s \
+          --max-instances=1 \
+          --quiet
 
     - name: Deploy gsheet_to_database function
       run: |
         echo "Deploying gsheet_to_database function..."
+        echo "Current directory: $(pwd)"
+        echo "Second cloud function directory contents:"
+        ls -la ./cloud_function_gsheet_to_database/
+
         gcloud functions deploy gsheet_to_database \
           --gen2 \
           --region=us-central1 \
@@ -58,7 +70,11 @@ jobs:
           --entry-point=gsheet_to_database \
           --trigger-http \
           --allow-unauthenticated \
-          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}"
+          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
+          --memory=512MB \
+          --timeout=540s \
+          --max-instances=1 \
+          --quiet
           
     - name: Wait for deployment to complete
       run: sleep 30
