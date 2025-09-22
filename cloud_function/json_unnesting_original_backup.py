@@ -25,7 +25,7 @@ class JsonUnnestingParser:
         """Parse SQL for custom unnesting syntax and return unnesting requests"""
         unnesting_requests = []
 
-        matches = re.findall(self.custom_syntax_pattern, sql, re.DOTALL)
+        matches = re.findall(self.custom_syntax_pattern, sql)
         for match in matches:
             json_column, name_key, value_key, field_list_str = match
             
