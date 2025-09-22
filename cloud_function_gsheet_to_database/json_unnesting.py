@@ -113,10 +113,10 @@ class JsonUnnestingTransformer:
                             ELSE '[]'::jsonb
                         END
                     ) item
-                    WHERE LOWER(item->>'question_title') = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(item->>'title') = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(item->>'question') = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(item->>'name') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                    WHERE LOWER(item->>'question_title') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(item->>'title') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(item->>'question') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(item->>'name') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
                     LIMIT 1
                 ),
                 -- Try 2: Direct field access if field_title is a JSON key
@@ -143,12 +143,12 @@ class JsonUnnestingTransformer:
                             ELSE jsonb_build_array({json_column})
                         END
                     ) elem
-                    WHERE LOWER(elem->>'question_title') = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(elem->>'title') = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(elem->>'question') = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(elem->>'name') = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(elem->>'label') = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(elem->>'key') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                    WHERE LOWER(elem->>'question_title') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(elem->>'title') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(elem->>'question') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(elem->>'name') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(elem->>'label') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(elem->>'key') LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
                     LIMIT 1
                 ),
                 -- Try 4: Look for field_title as a direct string value in the array
@@ -188,10 +188,10 @@ class JsonUnnestingTransformer:
                         END
                     ) value
                     WHERE LOWER(value->>0)::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(value->>'question_title')::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(value->>'title')::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(value->>'question')::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(value->>'name')::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(value->>'question_title')::text LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(value->>'title')::text LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(value->>'question')::text LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
+                       OR LOWER(value->>'name')::text LIKE LOWER({json.dumps(f"%{field_title[:30]}%", ensure_ascii=False)})
                     LIMIT 1
                 ),
                 ''
