@@ -13,6 +13,9 @@ from google.auth import default as google_auth_default
 import psycopg
 from psycopg.rows import dict_row
 
+# Import JSON unnesting functionality
+from json_unnesting import process_query_with_json_unnesting
+
 
 def _iso_now() -> str:
 	return datetime.now(timezone.utc).isoformat()
@@ -166,22 +169,27 @@ def pg_query_output_to_gsheet(request):
 
 		final_sql = _apply_row_limit(query_sql, row_limit)
 
-		# Connect to Neon Postgres
+		# Connect to Neon Postgres and execute query
 		database_url = os.getenv("NEON_DATABASE_URL")
 		if not database_url:
 			return ("NEON_DATABASE_URL is not configured", 500)
 
-		conn = psycopg.connect(database_url, connect_timeout=15, row_factory=dict_row)
+		# Try to use JSON unnesting functionality first
 		try:
-			with conn.cursor() as cur:
-				# Safety guardrails
-				cur.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
-				cur.execute("SET LOCAL statement_timeout = '60s'")
+			rows = process_query_with_json_unnesting(final_sql, database_url)
+		except ImportError:
+			# Fall back to direct execution if JSON unnesting is not available
+			conn = psycopg.connect(database_url, connect_timeout=15, row_factory=dict_row)
+			try:
+				with conn.cursor() as cur:
+					# Safety guardrails
+					cur.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
+					cur.execute("SET LOCAL statement_timeout = '60s'")
 
-				cur.execute(final_sql)
-				rows = cur.fetchall()
-		finally:
-			conn.close()
+					cur.execute(final_sql)
+					rows = cur.fetchall()
+			finally:
+				conn.close()
 
 		values = _to_sheet_values(rows, include_headers=include_headers)
 
