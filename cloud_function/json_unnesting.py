@@ -102,21 +102,56 @@ class JsonUnnestingTransformer:
                      THEN {json_column}->>{json.dumps(field_title)}
                      ELSE NULL
                 END,
-                -- Try 2: Look in array elements for matching title/question/name
+                -- Try 2: Look in array elements for matching title/question/name with flexible matching
                 (
-                    SELECT COALESCE(elem->>'value', elem->>'text', elem->>'answer', elem->>'response', '')
+                    SELECT COALESCE(
+                        elem->>'value',
+                        elem->>'text',
+                        elem->>'answer',
+                        elem->>'response',
+                        elem->>'description',
+                        elem->>'comment',
+                        ''
+                    )
                     FROM jsonb_array_elements({json_column}) elem
-                    WHERE elem->>'title' = {json.dumps(field_title)}
-                       OR elem->>'question' = {json.dumps(field_title)}
-                       OR elem->>'name' = {json.dumps(field_title)}
-                       OR elem->>'label' = {json.dumps(field_title)}
+                    WHERE LOWER(elem->>'title') = LOWER({json.dumps(field_title)})
+                       OR LOWER(elem->>'question') = LOWER({json.dumps(field_title)})
+                       OR LOWER(elem->>'name') = LOWER({json.dumps(field_title)})
+                       OR LOWER(elem->>'label') = LOWER({json.dumps(field_title)})
+                       OR LOWER(elem->>'key') = LOWER({json.dumps(field_title)})
                     LIMIT 1
                 ),
                 -- Try 3: Look for field_title as a direct string value in the array
                 (
-                    SELECT COALESCE(elem->>'value', elem->>'text', elem->>'answer', elem->>'response', '')
+                    SELECT COALESCE(
+                        elem->>'value',
+                        elem->>'text',
+                        elem->>'answer',
+                        elem->>'response',
+                        ''
+                    )
                     FROM jsonb_array_elements({json_column}) elem
-                    WHERE elem = {json.dumps(field_title)}::jsonb
+                    WHERE LOWER(elem->>0)::text = LOWER({json.dumps(field_title)})
+                    LIMIT 1
+                ),
+                -- Try 4: Try to find the field_title anywhere in the JSON as a value
+                (
+                    SELECT COALESCE(
+                        value->>'value',
+                        value->>'text',
+                        value->>'answer',
+                        ''
+                    )
+                    FROM jsonb_array_elements(
+                        CASE
+                            WHEN jsonb_typeof({json_column}) = 'array'
+                            THEN {json_column}
+                            ELSE jsonb_build_array({json_column})
+                        END
+                    ) value
+                    WHERE LOWER(value->>0)::text = LOWER({json.dumps(field_title)})
+                       OR LOWER(value->>'title')::text = LOWER({json.dumps(field_title)})
+                       OR LOWER(value->>'question')::text = LOWER({json.dumps(field_title)})
                     LIMIT 1
                 ),
                 ''
