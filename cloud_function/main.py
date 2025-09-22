@@ -23,8 +23,8 @@ def _iso_now() -> str:
 
 def _strip_template_syntax(sql: str) -> str:
 	"""Remove JSON unnesting template syntax for validation purposes"""
-	# Pattern to match {{all_fields_as_columns_from(...)}} syntax
-	template_pattern = r'\{\{all_fields_as_columns_from\([^}]+\)\}\}'
+	# Pattern to match {{fields_as_columns_from(...)}} syntax
+	template_pattern = r'\{\{fields_as_columns_from\([^}]+\)\}\}'
 	clean_sql = re.sub(template_pattern, '', sql)
 
 	# Clean up any malformed SQL after template removal

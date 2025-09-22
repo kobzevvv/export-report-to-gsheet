@@ -1,6 +1,7 @@
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 import logging
+import json
 
 try:
     import psycopg
@@ -13,9 +14,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Removed the complex FieldDiscovery class - now using explicit field lists instead
+
 class JsonUnnestingParser:
     def __init__(self):
-        self.custom_syntax_pattern = r'\{\{all_fields_as_columns_from\(([^,]+),\s*([^,]+),\s*([^)]+)\)\}\}'
+        # Updated pattern to capture fields_as_columns_from with variable field list
+        self.custom_syntax_pattern = r'\{\{fields_as_columns_from\(([^,]+),\s*([^,]+),\s*([^,]+),\s*(.+)\)\}\}'
 
     def parse(self, sql: str) -> Dict[str, Any]:
         """Parse SQL for custom unnesting syntax and return unnesting requests"""
@@ -23,104 +27,117 @@ class JsonUnnestingParser:
 
         matches = re.findall(self.custom_syntax_pattern, sql)
         for match in matches:
-            json_column, name_key, value_key = match
+            json_column, name_key, value_key, field_list_str = match
+            
+            # Parse the field list - extract quoted strings
+            field_titles = self._parse_field_list(field_list_str)
+            
             unnesting_requests.append({
                 "json_column": json_column.strip(),
                 "name_key": name_key.strip(),
-                "value_key": value_key.strip()
+                "value_key": value_key.strip(),
+                "field_titles": field_titles
             })
 
         return {"unnesting_requests": unnesting_requests}
+    
+    def _parse_field_list(self, field_list_str: str) -> List[str]:
+        """Parse comma-separated list of quoted field titles"""
+        field_titles = []
+        
+        # Find all quoted strings (both single and double quotes)
+        quoted_pattern = r'"([^"]+)"|\'([^\']+)\''
+        matches = re.findall(quoted_pattern, field_list_str)
+        
+        for match in matches:
+            # match is a tuple where one element is empty and one contains the string
+            field_title = match[0] if match[0] else match[1]
+            if field_title.strip():
+                field_titles.append(field_title.strip())
+        
+        return field_titles
 
 class JsonUnnestingTransformer:
-    def transform(self, sql: str, unnesting_requests: List[Dict[str, str]]) -> str:
+    def transform(self, sql: str, unnesting_requests: List[Dict[str, Any]]) -> str:
         """Transform SQL by replacing custom syntax with CTE for JSON unnesting"""
         # Validate unnesting requests
         for req in unnesting_requests:
-            if not all(key in req for key in ["json_column", "name_key", "value_key"]):
+            if not all(key in req for key in ["json_column", "name_key", "value_key", "field_titles"]):
                 raise ValueError("Invalid unnesting request: missing required keys")
 
-        # Remove template syntax to get clean user query
-        user_query = re.sub(r'\{\{all_fields_as_columns_from\([^}]+\)\}\}', '', sql).strip()
-        # Clean up any trailing commas after SELECT *,
-        user_query = re.sub(r'SELECT\s*\*\s*,\s*FROM', 'SELECT * FROM', user_query, flags=re.IGNORECASE)
+        # Remove template syntax first
+        clean_sql = re.sub(r'\{\{fields_as_columns_from\([^}]+\)\}\}', '', sql)
 
-        # Generate CTEs for all requests
-        ctes = []
-        
-        for i, req in enumerate(unnesting_requests):
-            json_column = req["json_column"]
-            name_key = req["name_key"]
-            value_key = req["value_key"]
+        # Find the table name in FROM clause
+        from_match = re.search(r'FROM\s+([^\s]+)', clean_sql, re.IGNORECASE)
+        table_name = from_match.group(1) if from_match else "unknown_table"
 
-            # Step 1: JSON preparation CTE
-            json_prep_cte = f"json_prep_{i}" if i > 0 else "json_prep"
-            source_table = f"json_prep_{i-1}" if i > 0 else f"({user_query})"
+        # Extract WHERE clause if present
+        where_match = re.search(r'\bWHERE\b(.+)', clean_sql, re.IGNORECASE | re.DOTALL)
+        where_clause = where_match.group(1).strip() if where_match else ""
+
+        # Generate CTE with explicit field columns
+        if not unnesting_requests:
+            return clean_sql
+
+        req = unnesting_requests[0]  # Take the first request
+        json_column = req["json_column"]
+        name_key = req["name_key"]
+        value_key = req["value_key"]
+        field_titles = req["field_titles"]
+
+        where_part = f"WHERE {where_clause}" if where_clause else ""
+
+        # Create column expressions for each explicit field
+        column_expressions = []
+        for i, field_title in enumerate(field_titles):
+            safe_column_name = self._make_safe_column_name(field_title, i)
             
-            json_prep_sql = f"""
-            {json_prep_cte} AS (
-                SELECT *,
-                       jsonb_typeof({json_column}) as json_type_{json_column},
-                       CASE 
-                           WHEN jsonb_typeof({json_column}) = 'array' 
-                           THEN jsonb_array_length({json_column}) > 0
-                           WHEN jsonb_typeof({json_column}) = 'object'
-                           THEN {json_column} IS NOT NULL
-                           ELSE false
-                       END as has_valid_{json_column}
-                FROM {source_table} base_query
-                WHERE CASE 
-                          WHEN jsonb_typeof({json_column}) = 'array' 
-                          THEN jsonb_array_length({json_column}) > 0
-                          WHEN jsonb_typeof({json_column}) = 'object'
-                          THEN {json_column} IS NOT NULL
-                          ELSE false
-                      END
-            )"""
+            # Create SQL expression to extract this specific field value
+            # Look for the field title in the JSON array and get its value
+            extract_expr = f"""
+            COALESCE((
+                SELECT elem->>{json.dumps(value_key)}
+                FROM jsonb_array_elements({json_column}) elem
+                WHERE elem->>{json.dumps(name_key)} = {json.dumps(field_title)}
+                LIMIT 1
+            ), '') AS "{safe_column_name}"
+            """
+            
+            column_expressions.append(extract_expr.strip())
 
-            # Step 2: JSON unnesting CTE using LATERAL
-            unnested_cte = f"unnested_{json_column}"
-            unnested_sql = f"""
-            {unnested_cte} AS (
-                SELECT base.*,
-                       item
-                FROM {json_prep_cte} base
-                CROSS JOIN LATERAL (
-                    SELECT CASE 
-                               WHEN base.json_type_{json_column} = 'array'
-                               THEN elem
-                               WHEN base.json_type_{json_column} = 'object'
-                               THEN jsonb_build_object('{name_key}', base.{json_column}->>'{name_key}', '{value_key}', base.{json_column}->>'{value_key}')
-                               ELSE NULL
-                           END as item
-                    FROM LATERAL jsonb_array_elements(
-                        CASE WHEN base.json_type_{json_column} = 'array' 
-                             THEN base.{json_column}
-                             ELSE jsonb_build_array(jsonb_build_object('{name_key}', base.{json_column}->>'{name_key}', '{value_key}', base.{json_column}->>'{value_key}'))
-                        END
-                    ) as elem
-                ) lateral_unnest
-                WHERE item IS NOT NULL
-            )"""
+        # Combine all columns
+        all_columns = "*, " + ", ".join(column_expressions)
 
-            # Step 3: Column flattening CTE
-            flattened_cte = f"flattened_{json_column}"
-            flattened_sql = f"""
-            {flattened_cte} AS (
-                SELECT *,
-                       COALESCE(item->>'{name_key}', '') AS "{json_column}_{name_key}_1",
-                       COALESCE(item->>'{value_key}', '') AS "{json_column}_{value_key}_1"
-                FROM {unnested_cte}
-            )"""
+        final_sql = f"""
+        WITH base_data AS (
+            SELECT {all_columns}
+            FROM {table_name}
+            {where_part}
+        )
+        SELECT * FROM base_data
+        """
 
-            ctes.extend([json_prep_sql, unnested_sql, flattened_sql])
+        return final_sql.strip()
+    
+    def _make_safe_column_name(self, field_title: str, index: int) -> str:
+        """Convert field title to a safe PostgreSQL column name"""
+        # Replace problematic characters
+        safe_name = re.sub(r'[^\w\s]', '_', field_title)
+        safe_name = re.sub(r'\s+', '_', safe_name)
+        safe_name = safe_name.strip('_').lower()
+        
+        # Ensure it's not too long (PostgreSQL limit is 63 characters)
+        if len(safe_name) > 50:
+            safe_name = safe_name[:47] + f"_{index}"
+        
+        # Ensure it doesn't start with a number
+        if safe_name and safe_name[0].isdigit():
+            safe_name = f"field_{safe_name}"
+        
+        return safe_name or f"field_{index}"
 
-        # Combine CTEs and SELECT
-        full_cte = "WITH " + ", ".join(ctes)
-        last_cte_name = f"flattened_{unnesting_requests[-1]['json_column']}"
-        final_select = f"SELECT * FROM {last_cte_name}"
-
-        return full_cte + " " + final_select
+# Simplified approach: use explicit field lists instead of auto-discovery
 
 def process_query_with_json_unnesting(sql: str, database_url: str) -> List[Dict[str, Any]]:
     """Process a query with JSON unnesting and return results"""
@@ -153,5 +170,4 @@ def process_query_with_json_unnesting(sql: str, database_url: str) -> List[Dict[
         return rows
     except Exception as e:
         logger.error(f"Error executing query: {e}")
-        # Include the transformed SQL in the error for better debugging
-        raise Exception(f"SQL Execution Error: {e}\nTransformed SQL: {transformed_sql}") from e
+        raise
