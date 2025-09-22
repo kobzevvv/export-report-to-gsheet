@@ -54,7 +54,7 @@ jobs:
           --timeout=540s \
           --max-instances=1 \
           --quiet \
-          --clear-env-vars=PUBLIC_TRIGGER_TOKEN
+          --remove-env-vars=PUBLIC_TRIGGER_TOKEN
 
     - name: Deploy gsheet_to_database function
       run: |
@@ -76,7 +76,7 @@ jobs:
           --timeout=540s \
           --max-instances=1 \
           --quiet \
-          --clear-env-vars=PUBLIC_TRIGGER_TOKEN
+          --remove-env-vars=PUBLIC_TRIGGER_TOKEN
           
     - name: Wait for deployment to complete
       run: sleep 30
