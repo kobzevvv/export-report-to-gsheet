@@ -80,6 +80,24 @@ def _build_sheets_client():
 	return build("sheets", "v4", credentials=credentials)
 
 
+def _check_google_sheets_access(sheets_api, spreadsheet_id: str) -> str:
+	"""Check if the service account has access to the Google Sheet"""
+	try:
+		# Try to get basic sheet info - this will fail if no access
+		resp = sheets_api.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+		return None  # No error, access is good
+	except Exception as e:
+		error_str = str(e).lower()
+
+		if "forbidden" in error_str or "permission" in error_str:
+			return f"❌ PERMISSION DENIED: The Cloud Function service account doesn't have access to this Google Sheet. Please share the sheet with the service account email (found in Cloud Console > IAM & Admin > Service Accounts) and give it 'Editor' access."
+
+		if "not found" in error_str:
+			return f"❌ SPREADSHEET NOT FOUND: The spreadsheet '{spreadsheet_id}' doesn't exist or is inaccessible."
+
+		return f"❌ GOOGLE SHEETS API ERROR: {e}"
+
+
 def _read_cell(sheets_api, spreadsheet_id: str, a1_notation: str) -> str:
 	resp = sheets_api.spreadsheets().values().get(
 		spreadsheetId=spreadsheet_id,
@@ -104,20 +122,43 @@ def _clear_range(sheets_api, spreadsheet_id: str, sheet_name: str, starting_cell
 	# Clear a reasonable range starting from starting_cell downwards
 	# Using a more reasonable range to avoid Google Sheets API limits
 	clear_range = f"{sheet_name}!{starting_cell}:Z1000"
-	sheets_api.spreadsheets().values().clear(
-		spreadsheetId=spreadsheet_id,
-		range=clear_range,
-		body={},
-	).execute()
+	try:
+		sheets_api.spreadsheets().values().clear(
+			spreadsheetId=spreadsheet_id,
+			range=clear_range,
+			body={},
+		).execute()
+	except Exception as e:
+		# Log the error but don't fail the entire operation
+		print(f"Warning: Could not clear range {clear_range}: {e}")
 
 
 def _write_values(sheets_api, spreadsheet_id: str, sheet_name: str, starting_cell: str, values: typing.List[typing.List[str]], value_input_option: str):
-	sheets_api.spreadsheets().values().update(
-		spreadsheetId=spreadsheet_id,
-		range=f"{sheet_name}!{starting_cell}",
-		valueInputOption=value_input_option,
-		body={"values": values},
-	).execute()
+	# For large datasets, batch the writes to avoid memory issues
+	BATCH_SIZE = 10000  # Adjust based on your needs
+	for i in range(0, len(values), BATCH_SIZE):
+		batch = values[i:i + BATCH_SIZE]
+		# Calculate the correct starting cell for this batch
+		if i == 0:
+			current_cell = starting_cell
+		else:
+			# For subsequent batches, start from where the previous batch would end
+			# This assumes starting_cell is like "A2", "B10", etc.
+			cell_parts = starting_cell.split('!')
+			sheet_part = cell_parts[0]
+			cell_part = cell_parts[1] if len(cell_parts) > 1 else starting_cell
+
+			# Simple cell calculation - you might need more sophisticated logic
+			# for different starting cell formats
+			batch_start_row = i + 1  # +1 because we want to start after previous batch
+			current_cell = f"{sheet_part}!A{batch_start_row}"
+
+		sheets_api.spreadsheets().values().update(
+			spreadsheetId=spreadsheet_id,
+			range=f"{sheet_name}!{current_cell}",
+			valueInputOption=value_input_option,
+			body={"values": batch},
+		).execute()
 
 
 def _require_token_if_configured(token_param: typing.Optional[str]):
@@ -125,6 +166,57 @@ def _require_token_if_configured(token_param: typing.Optional[str]):
 	if configured:
 		if not token_param or token_param != configured:
 			raise PermissionError("Unauthorized: invalid token")
+
+
+def _get_enhanced_error_message(exception: Exception, request) -> str:
+	"""Provide user-friendly error messages for common issues"""
+	error_str = str(exception)
+	args = request.args or {}
+
+	# Check for Google API authentication errors
+	if "authentication" in error_str.lower() or "credentials" in error_str.lower():
+		return f"❌ GOOGLE SHEETS API ERROR: Authentication failed. The Cloud Function service account doesn't have proper Google Sheets API access. Please check: 1) Service account permissions in Google Cloud Console 2) Google Sheets API is enabled 3) Service account has access to the spreadsheet"
+
+	# Check for permission/access errors
+	if "permission" in error_str.lower() or "access" in error_str.lower() or "forbidden" in error_str.lower():
+		return f"❌ GOOGLE SHEETS PERMISSION ERROR: The Cloud Function doesn't have access to the Google Sheet '{args.get('spreadsheet_id', 'unknown')}'. Please ensure: 1) The service account is shared on the Google Sheet 2) Service account has 'Editor' access 3) Sheet is not 'View Only'"
+
+	# Check for spreadsheet not found errors
+	if "not found" in error_str.lower():
+		return f"❌ SPREADSHEET NOT FOUND: The Google Sheet '{args.get('spreadsheet_id', 'unknown')}' was not found or is inaccessible. Please verify the spreadsheet_id parameter"
+
+	# Check for database connection errors
+	if "connection" in error_str.lower() or "database" in error_str.lower():
+		return f"❌ DATABASE CONNECTION ERROR: Cannot connect to the database. Please check the NEON_DATABASE_URL environment variable"
+
+	# Check for SQL errors
+	if "sql" in error_str.lower() or "syntax" in error_str.lower():
+		return f"❌ SQL QUERY ERROR: The SQL query in the sheet is invalid. Please check the SQL syntax and ensure it's a SELECT statement only"
+
+	# Default error message
+	return f"❌ FUNCTION ERROR: {type(exception).__name__}: {exception}"
+
+
+def _get_error_status_code(exception: Exception) -> int:
+	"""Return appropriate HTTP status code based on error type"""
+	error_str = str(exception).lower()
+
+	if "authentication" in error_str or "credentials" in error_str:
+		return 403  # Forbidden
+
+	if "permission" in error_str or "access" in error_str or "forbidden" in error_str:
+		return 403  # Forbidden
+
+	if "not found" in error_str:
+		return 404  # Not Found
+
+	if "connection" in error_str or "database" in error_str:
+		return 503  # Service Unavailable
+
+	if "sql" in error_str or "syntax" in error_str:
+		return 400  # Bad Request
+
+	return 500  # Internal Server Error
 
 
 @functions_framework.http
@@ -155,6 +247,12 @@ def pg_query_output_to_gsheet(request):
 			return ("One of sql or sql_cell is required", 400)
 
 		sheets_api = _build_sheets_client()
+
+		# Check Google Sheets access before proceeding
+		access_error = _check_google_sheets_access(sheets_api, spreadsheet_id)
+		if access_error:
+			return (access_error, 403)
+
 		if sql_cell:
 			query_sql = _read_cell(sheets_api, spreadsheet_id, sql_cell)
 		else:
@@ -217,6 +315,9 @@ def pg_query_output_to_gsheet(request):
 	except PermissionError as e:
 		return (str(e), 401)
 	except Exception as e:
+		# Enhanced error handling for Google API and permission issues
+		error_message = _get_enhanced_error_message(e, request)
+
 		# Best-effort status write on error
 		try:
 			args = request.args or {}
@@ -228,8 +329,11 @@ def pg_query_output_to_gsheet(request):
 				if timestamp_cell:
 					_update_cell(sheets_api, spreadsheet_id, timestamp_cell, _iso_now())
 				if status_cell:
-					_update_cell(sheets_api, spreadsheet_id, status_cell, f"ERROR: {type(e).__name__}: {e}")
+					_update_cell(sheets_api, spreadsheet_id, status_cell, error_message)
 		except Exception:
 			pass
-		return (f"Error: {type(e).__name__}: {e}", 500)
+
+		# Return appropriate HTTP status code based on error type
+		status_code = _get_error_status_code(e)
+		return (error_message, status_code)
 
