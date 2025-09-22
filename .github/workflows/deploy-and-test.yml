@@ -49,7 +49,7 @@ jobs:
           --entry-point=pg_query_output_to_gsheet \
           --trigger-http \
           --allow-unauthenticated \
-          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
+          --update-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
           --memory=512MB \
           --timeout=540s \
           --max-instances=1 \
@@ -71,7 +71,7 @@ jobs:
           --entry-point=gsheet_to_database \
           --trigger-http \
           --allow-unauthenticated \
-          --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
+          --update-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
           --memory=512MB \
           --timeout=540s \
           --max-instances=1 \
