@@ -5,6 +5,7 @@ on:
     branches: [ main ]  
     paths:
       - 'cloud_function/**'
+      - 'json_unnesting.py'
       - 'requirements.txt'
       - '.github/workflows/deploy.yml'
   workflow_dispatch: {} 
