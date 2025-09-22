@@ -53,15 +53,29 @@ WHERE conditions...
 ```
 
 #### Parameters
-- `json_column`: Name of the JSON/JSONB column containing array data
+- `json_column`: Name of the JSON/JSONB column containing array or object data
 - `name_key`: JSON field to use as column names (e.g., "question_title")
 - `value_key`: JSON field to use as column values (e.g., "value_text")
 
+#### Supported JSON Formats
+The unnesting feature supports both JSON arrays and objects:
+
+**JSON Array Format:**
+```json
+[
+  {"question_title": "Experience", "value_text": "5 years"}, 
+  {"question_title": "Skills", "value_text": "Python, SQL"}
+]
+```
+
+**JSON Object Format:**
+```json
+{"question_title": "Experience", "value_text": "5 years"}
+```
+
 #### Example
 ```sql
--- Input JSON column: answers_json
--- [{"question_title": "Experience", "value_text": "5 years"}, {"question_title": "Skills", "value_text": "Python, SQL"}]
-
+-- Works with both JSON arrays and objects in answers_json column
 SELECT *,
        {{all_fields_as_columns_from(answers_json, question_title, value_text)}}
 FROM public_marts.candidates
@@ -135,6 +149,8 @@ CSV template for `Config` row 1 (A1:D1):
 ```
 "https://pg-query-output-to-gsheet-grz2olvbca-uc.a.run.app","SELECT *, {{all_fields_as_columns_from(answers_json, question_title, value_text)}} FROM public_marts.candidates WHERE position_name ILIKE '%flutter%'","",""
 ```
+
+**Note:** The JSON unnesting feature automatically detects whether your JSON column contains arrays or objects and handles both formats appropriately.
 
 ### Real Examples
 

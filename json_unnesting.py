@@ -65,17 +65,37 @@ class JsonUnnestingTransformer:
 
             where_part = f"WHERE {where_clause}" if where_clause else ""
 
+            # Handle JSON arrays and objects properly
             cte_sql = f"""
             {cte_name} AS (
-                SELECT *, jsonb_array_elements({json_column}) AS item
+                SELECT *,
+                       CASE
+                           WHEN jsonb_typeof({json_column}) = 'array' AND jsonb_array_length({json_column}) > 0
+                           THEN jsonb_array_elements({json_column})
+                           WHEN jsonb_typeof({json_column}) = 'object'
+                           THEN jsonb_build_object('{name_key}', {json_column}->>'{name_key}', '{value_key}', {json_column}->>'{value_key}')
+                           ELSE NULL
+                       END AS item
                 FROM {table_name}
                 {where_part}
+                WHERE {json_column} IS NOT NULL
+                  AND (
+                      (jsonb_typeof({json_column}) = 'array' AND jsonb_array_length({json_column}) > 0)
+                      OR jsonb_typeof({json_column}) = 'object'
+                  )
             ),
             {flattened_cte_name} AS (
                 SELECT *,
-                       item->>'{name_key}' AS "{json_column}_{name_key}_1",
-                       item->>'{value_key}' AS "{json_column}_{value_key}_1"
+                       CASE
+                           WHEN item->>'{name_key}' IS NOT NULL THEN item->>'{name_key}'
+                           ELSE ''
+                       END AS "{json_column}_{name_key}_1",
+                       CASE
+                           WHEN item->>'{value_key}' IS NOT NULL THEN item->>'{value_key}'
+                           ELSE ''
+                       END AS "{json_column}_{value_key}_1"
                 FROM {cte_name}
+                WHERE item IS NOT NULL
             )
             """
 
