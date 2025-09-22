@@ -34,13 +34,9 @@ jobs:
       with:
         project_id: ${{ secrets.GCP_PROJECT_ID }}
       
-    - name: Deploy pg_query_output_to_gsheet function
+    - name: Deploy pg_query_output_to_gsheet function (clear env vars)
       run: |
-        echo "Deploying pg_query_output_to_gsheet function..."
-        echo "Current directory: $(pwd)"
-        echo "Cloud function directory contents:"
-        ls -la ./cloud_function/
-
+        echo "Step 1: Clearing all environment variables..."
         gcloud functions deploy pg_query_output_to_gsheet \
           --gen2 \
           --region=us-central1 \
@@ -50,19 +46,31 @@ jobs:
           --trigger-http \
           --allow-unauthenticated \
           --clear-env-vars \
+          --memory=512MB \
+          --timeout=540s \
+          --max-instances=1 \
+          --quiet
+
+    - name: Deploy pg_query_output_to_gsheet function (set database URL)
+      run: |
+        echo "Step 2: Setting NEON_DATABASE_URL..."
+        gcloud functions deploy pg_query_output_to_gsheet \
+          --gen2 \
+          --region=us-central1 \
+          --runtime=python311 \
+          --source=./cloud_function \
+          --entry-point=pg_query_output_to_gsheet \
+          --trigger-http \
+          --allow-unauthenticated \
           --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
           --memory=512MB \
           --timeout=540s \
           --max-instances=1 \
           --quiet
 
-    - name: Deploy gsheet_to_database function
+    - name: Deploy gsheet_to_database function (clear env vars)
       run: |
-        echo "Deploying gsheet_to_database function..."
-        echo "Current directory: $(pwd)"
-        echo "Second cloud function directory contents:"
-        ls -la ./cloud_function_gsheet_to_database/
-
+        echo "Step 1: Clearing all environment variables for gsheet_to_database..."
         gcloud functions deploy gsheet_to_database \
           --gen2 \
           --region=us-central1 \
@@ -72,6 +80,22 @@ jobs:
           --trigger-http \
           --allow-unauthenticated \
           --clear-env-vars \
+          --memory=512MB \
+          --timeout=540s \
+          --max-instances=1 \
+          --quiet
+
+    - name: Deploy gsheet_to_database function (set database URL)
+      run: |
+        echo "Step 2: Setting NEON_DATABASE_URL for gsheet_to_database..."
+        gcloud functions deploy gsheet_to_database \
+          --gen2 \
+          --region=us-central1 \
+          --runtime=python311 \
+          --source=./cloud_function_gsheet_to_database \
+          --entry-point=gsheet_to_database \
+          --trigger-http \
+          --allow-unauthenticated \
           --set-env-vars=NEON_DATABASE_URL="${{ secrets.NEON_DATABASE_URL }}" \
           --memory=512MB \
           --timeout=540s \
