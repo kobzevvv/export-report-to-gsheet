@@ -119,4 +119,5 @@ def process_query_with_json_unnesting(sql: str, database_url: str) -> List[Dict[
         return rows
     except Exception as e:
         logger.error(f"Error executing query: {e}")
-        raise
+        # Include the transformed SQL in the error for better debugging
+        raise Exception(f"SQL Execution Error: {e}\nTransformed SQL: {transformed_sql}") from e
