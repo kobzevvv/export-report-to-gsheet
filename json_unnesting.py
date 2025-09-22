@@ -198,16 +198,33 @@ class JsonUnnestingTransformer:
 
             column_expressions.append(extract_expr.strip())
 
-        # Replace the template syntax with the extracted column expressions
-        # This preserves the user's original SELECT clause and column ordering
-        extracted_columns_sql = ",\n".join(column_expressions)
+        # HYBRID APPROACH: Use CTE for proper data retrieval but preserve user's column selection
         
-        # Replace the template syntax with the actual column expressions in the original SQL
-        final_sql = re.sub(
+        # Extract the original SELECT columns from the user's query to preserve order
+        select_match = re.search(r'SELECT\s+(.*?)\s+FROM', sql, re.IGNORECASE | re.DOTALL)
+        if not select_match:
+            raise ValueError("Invalid SQL: Could not extract SELECT clause")
+        
+        original_select = select_match.group(1).strip()
+        
+        # Replace the template syntax with extracted column expressions in the SELECT clause
+        extracted_columns_sql = ",\n".join(column_expressions)
+        user_columns_with_extractions = re.sub(
             r'\{\{fields_as_columns_from\([^}]+\)\}\}',
             extracted_columns_sql,
-            sql
+            original_select
         )
+
+        # Create the final SQL with CTE structure for proper data retrieval
+        # but only select the user's specified columns
+        final_sql = f"""
+        WITH base_data AS (
+            SELECT {user_columns_with_extractions}
+            FROM {table_name}
+            {where_part}
+        )
+        SELECT * FROM base_data
+        """
 
         return final_sql.strip()
     
