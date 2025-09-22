@@ -6,10 +6,10 @@ using multiple fallback strategies.
 """
 
 from .strategies.base_strategy import IJsonExtractionStrategy, JsonExtractionContext
-# from .column_expression_generator import ColumnExpressionGenerator  # TODO: Create this in Step 8
+from .column_expression_generator import ColumnExpressionGenerator
 
 __all__ = [
     'IJsonExtractionStrategy',
-    'JsonExtractionContext'
-    # 'ColumnExtractionGenerator'  # TODO: Add back in Step 8
+    'JsonExtractionContext',
+    'ColumnExpressionGenerator'
 ]
