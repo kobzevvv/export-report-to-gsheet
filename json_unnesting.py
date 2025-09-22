@@ -113,15 +113,15 @@ class JsonUnnestingTransformer:
                             ELSE '[]'::jsonb
                         END
                     ) item
-                    WHERE LOWER(item->>'question_title') = LOWER({json.dumps(field_title)})
-                       OR LOWER(item->>'title') = LOWER({json.dumps(field_title)})
-                       OR LOWER(item->>'question') = LOWER({json.dumps(field_title)})
-                       OR LOWER(item->>'name') = LOWER({json.dumps(field_title)})
+                    WHERE LOWER(item->>'question_title') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(item->>'title') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(item->>'question') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(item->>'name') = LOWER({json.dumps(field_title, ensure_ascii=False)})
                     LIMIT 1
                 ),
                 -- Try 2: Direct field access if field_title is a JSON key
-                CASE WHEN {json_column} ? {json.dumps(field_title)}
-                     THEN {json_column}->>{json.dumps(field_title)}
+                CASE WHEN {json_column} ? {json.dumps(field_title, ensure_ascii=False)}
+                     THEN {json_column}->>{json.dumps(field_title, ensure_ascii=False)}
                      ELSE NULL
                 END,
                 -- Try 3: Look in array elements for matching title/question/name with flexible matching
@@ -143,12 +143,12 @@ class JsonUnnestingTransformer:
                             ELSE jsonb_build_array({json_column})
                         END
                     ) elem
-                    WHERE LOWER(elem->>'question_title') = LOWER({json.dumps(field_title)})
-                       OR LOWER(elem->>'title') = LOWER({json.dumps(field_title)})
-                       OR LOWER(elem->>'question') = LOWER({json.dumps(field_title)})
-                       OR LOWER(elem->>'name') = LOWER({json.dumps(field_title)})
-                       OR LOWER(elem->>'label') = LOWER({json.dumps(field_title)})
-                       OR LOWER(elem->>'key') = LOWER({json.dumps(field_title)})
+                    WHERE LOWER(elem->>'question_title') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(elem->>'title') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(elem->>'question') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(elem->>'name') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(elem->>'label') = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(elem->>'key') = LOWER({json.dumps(field_title, ensure_ascii=False)})
                     LIMIT 1
                 ),
                 -- Try 4: Look for field_title as a direct string value in the array
@@ -168,7 +168,7 @@ class JsonUnnestingTransformer:
                             ELSE jsonb_build_array({json_column})
                         END
                     ) elem
-                    WHERE LOWER(elem->>0)::text = LOWER({json.dumps(field_title)})
+                    WHERE LOWER(elem->>0)::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
                     LIMIT 1
                 ),
                 -- Try 5: Try to find the field_title anywhere in the JSON as a value
@@ -187,11 +187,11 @@ class JsonUnnestingTransformer:
                             ELSE jsonb_build_array({json_column})
                         END
                     ) value
-                    WHERE LOWER(value->>0)::text = LOWER({json.dumps(field_title)})
-                       OR LOWER(value->>'question_title')::text = LOWER({json.dumps(field_title)})
-                       OR LOWER(value->>'title')::text = LOWER({json.dumps(field_title)})
-                       OR LOWER(value->>'question')::text = LOWER({json.dumps(field_title)})
-                       OR LOWER(value->>'name')::text = LOWER({json.dumps(field_title)})
+                    WHERE LOWER(value->>0)::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(value->>'question_title')::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(value->>'title')::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(value->>'question')::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
+                       OR LOWER(value->>'name')::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
                     LIMIT 1
                 ),
                 ''
