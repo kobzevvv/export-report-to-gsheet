@@ -78,6 +78,38 @@ jobs:
               --description="GCF build artifacts" || true
           fi
 
+      - name: Grant Cloud Build permissions to Compute Engine default service account
+        run: |
+          set -euo pipefail
+          PROJECT_ID=${GCP_PROJECT_ID}
+          PROJECT_NUMBER=${PROJECT_ID%%-*}
+          SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+          # Grant Cloud Build Service Account role to the Compute Engine default service account
+          gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+            --member="serviceAccount:${SERVICE_ACCOUNT}" \
+            --role="roles/cloudbuild.builds.builder" \
+            --quiet || true
+
+      - name: Check for existing Cloud Function builds
+        run: |
+          set -euo pipefail
+          REGION=${GCP_REGION:-us-central1}
+          NAME=${FUNCTION_NAME:-pg_query_output_to_gsheet}
+
+          # Check if there are any existing builds in progress
+          echo "Checking for existing Cloud Function builds..."
+          BUILDS=$(gcloud builds list --region=${REGION} --filter="status=(WORKING OR QUEUED)" --format="value(id)" || true)
+          if [[ -n "${BUILDS}" ]]; then
+            echo "Found existing builds in progress: ${BUILDS}"
+            echo "Waiting for builds to complete..."
+            for BUILD in ${BUILDS}; do
+              gcloud builds log ${BUILD} --region=${REGION} || true
+            done
+            # Wait a bit for builds to potentially finish
+            sleep 30
+          fi
+
       - name: Deploy Cloud Function (Gen2)
         id: deploy
         run: |
@@ -110,12 +142,27 @@ jobs:
             DEPLOY_ARGS+=(--set-secrets=PUBLIC_TRIGGER_TOKEN=${SECRET_PUBLIC_TRIGGER_TOKEN}:latest)
           fi
 
-          gcloud functions deploy ${NAME} "${DEPLOY_ARGS[@]}"
+          # Retry deployment up to 3 times with 30 second delays
+          for i in {1..3}; do
+            echo "Deployment attempt $i/3"
+            if gcloud functions deploy ${NAME} "${DEPLOY_ARGS[@]}"; then
+              echo "Deployment successful on attempt $i"
+              break
+            else
+              echo "Deployment failed on attempt $i"
+              if [[ $i -lt 3 ]]; then
+                echo "Waiting 30 seconds before retry..."
+                sleep 30
+              fi
+            fi
+          done
 
           # Discover URL and expose as output
           URL=$(gcloud functions describe ${NAME} --region=${REGION} --format="value(serviceConfig.uri)" || true)
           if [[ -z "${URL}" ]]; then
             # Fallback to provided secret if set
             URL=${GOOGLE_CLOUD_FUNCTION_URL:-}
+            echo "Warning: Could not retrieve function URL, using fallback"
           fi
           echo "function_url=${URL}" >> $GITHUB_OUTPUT
+          echo "Deployment completed. Function URL: ${URL}"
