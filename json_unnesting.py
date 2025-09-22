@@ -92,6 +92,9 @@ class JsonUnnestingTransformer:
         column_expressions = []
         for i, field_title in enumerate(field_titles):
             safe_column_name = self._make_safe_column_name(field_title, i)
+            
+            # Create pattern for LIKE matching (truncated to 30 chars, escaped single quotes)
+            pattern = field_title[:30].replace("'", "''")
 
             # Create SQL expression to extract this specific field value
             # Handle nested JSON structure with 'list' array and flexible field matching
@@ -113,10 +116,10 @@ class JsonUnnestingTransformer:
                             ELSE '[]'::jsonb
                         END
                     ) item
-                    WHERE LOWER(item->>'question_title') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(item->>'title') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(item->>'question') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(item->>'name') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
+                    WHERE LOWER(item->>'question_title') LIKE LOWER('%{pattern}%')
+                       OR LOWER(item->>'title') LIKE LOWER('%{pattern}%')
+                       OR LOWER(item->>'question') LIKE LOWER('%{pattern}%')
+                       OR LOWER(item->>'name') LIKE LOWER('%{pattern}%')
                     LIMIT 1
                 ),
                 -- Try 2: Direct field access if field_title is a JSON key
@@ -143,12 +146,12 @@ class JsonUnnestingTransformer:
                             ELSE jsonb_build_array({json_column})
                         END
                     ) elem
-                    WHERE LOWER(elem->>'question_title') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(elem->>'title') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(elem->>'question') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(elem->>'name') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(elem->>'label') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(elem->>'key') LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
+                    WHERE LOWER(elem->>'question_title') LIKE LOWER('%{pattern}%')
+                       OR LOWER(elem->>'title') LIKE LOWER('%{pattern}%')
+                       OR LOWER(elem->>'question') LIKE LOWER('%{pattern}%')
+                       OR LOWER(elem->>'name') LIKE LOWER('%{pattern}%')
+                       OR LOWER(elem->>'label') LIKE LOWER('%{pattern}%')
+                       OR LOWER(elem->>'key') LIKE LOWER('%{pattern}%')
                     LIMIT 1
                 ),
                 -- Try 4: Look for field_title as a direct string value in the array
@@ -188,10 +191,10 @@ class JsonUnnestingTransformer:
                         END
                     ) value
                     WHERE LOWER(value->>0)::text = LOWER({json.dumps(field_title, ensure_ascii=False)})
-                       OR LOWER(value->>'question_title')::text LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(value->>'title')::text LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(value->>'question')::text LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
-                       OR LOWER(value->>'name')::text LIKE LOWER('{f"%{field_title[:30].replace("'", "''")}%"}')
+                       OR LOWER(value->>'question_title')::text LIKE LOWER('%{pattern}%')
+                       OR LOWER(value->>'title')::text LIKE LOWER('%{pattern}%')
+                       OR LOWER(value->>'question')::text LIKE LOWER('%{pattern}%')
+                       OR LOWER(value->>'name')::text LIKE LOWER('%{pattern}%')
                     LIMIT 1
                 ),
                 ''
