@@ -20,6 +20,9 @@ from json_unnesting import process_query_with_json_unnesting
 def _iso_now() -> str:
 	return datetime.now(timezone.utc).isoformat()
 
+# Version marker for deployment tracking
+DEPLOYMENT_VERSION = "2025-09-23-v2"
+
 
 def _strip_template_syntax(sql: str) -> str:
 	"""Remove JSON unnesting template syntax for validation purposes"""
