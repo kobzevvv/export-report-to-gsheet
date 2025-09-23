@@ -128,8 +128,21 @@ class JsonUnnestingTransformer:
                        OR LOWER(item->>'name') LIKE LOWER('%{pattern}%')
                     LIMIT 1
                 ),
-                -- Try 2: Direct field access (skipped for pattern matching approach)
-                NULL,
+                -- Try 2: Direct field access with hidden field support (ENHANCED!)
+                COALESCE(
+                    -- Check hidden fields first (PRIMARY for Typeform responses)
+                    {json_column}->'hidden'->>'email',
+                    {json_column}->'hidden'->>'Email',
+                    {json_column}->'hidden'->>'EMAIL',
+                    -- Check direct field access
+                    {json_column}->>'email',
+                    {json_column}->>'Email',
+                    {json_column}->>'EMAIL',
+                    -- Try the actual field title in hidden object
+                    {json_column}->'hidden'->>'{{field_title.replace("'", "''")}}',
+                    -- Try the actual field title directly
+                    {json_column}->>'{{field_title.replace("'", "''")}}'
+                ),
                 -- Try 3: Look in array elements for matching title/question/name with flexible matching
                 (
                     SELECT COALESCE(
