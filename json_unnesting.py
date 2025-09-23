@@ -45,15 +45,27 @@ class JsonUnnestingParser:
         """Parse comma-separated list of quoted field titles"""
         field_titles = []
         
-        # Find all quoted strings (both single and double quotes)
-        quoted_pattern = r'"([^"]+)"|\'([^\']+)\''
-        matches = re.findall(quoted_pattern, field_list_str)
+        # Find all quoted strings (both double double-quotes and single double-quotes)
+        # First try double double-quotes (""field""), then single double-quotes ("field")
+        double_quoted_pattern = r'""([^"]+)""'
+        single_quoted_pattern = r'"([^"]+)"'
+        single_quote_pattern = r"'([^']+)'"
         
-        for match in matches:
-            # match is a tuple where one element is empty and one contains the string
-            field_title = match[0] if match[0] else match[1]
-            if field_title.strip():
-                field_titles.append(field_title.strip())
+        # Try double double-quotes first
+        matches = re.findall(double_quoted_pattern, field_list_str)
+        if matches:
+            # If we found double double-quotes, use those
+            for match in matches:
+                if match.strip():
+                    field_titles.append(match.strip())
+        else:
+            # Fallback to single quotes patterns
+            matches = re.findall(single_quoted_pattern + '|' + single_quote_pattern, field_list_str)
+            for match in matches:
+                # match is a tuple where one element is empty and one contains the string
+                field_title = match[0] if match[0] else match[1] if isinstance(match, tuple) else match
+                if field_title and field_title.strip():
+                    field_titles.append(field_title.strip())
         
         return field_titles
 
