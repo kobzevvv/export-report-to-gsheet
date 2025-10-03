@@ -245,6 +245,7 @@ def _get_error_status_code(exception: Exception) -> int:
 @functions_framework.http
 def pg_query_output_to_gsheet(request):
 	start_time = time.time()
+	query_sql = None  # Initialize query_sql to avoid UnboundLocalError
 	try:
 		args = request.args or {}
 		spreadsheet_id = args.get("spreadsheet_id")
